@@ -36,46 +36,111 @@ const ACTION_CATEGORIES = [
   },
 ]
 
-// ─── Profile Dropdown ───────────────────────────────────────
-function ProfileDropdown({ profile }) {
-  const [open, setOpen] = useState(false)
+// ─── Profile Switcher ────────────────────────────────────────
+function ProfileSwitcher({ activeProfile, profiles, onSwitch, onCreate, onDelete }) {
+  const [open,       setOpen]       = useState(false)
+  const [creatingNew, setCreatingNew] = useState(false)
+  const [newName,    setNewName]    = useState('')
+  const containerRef = useRef(null)
 
+  // Close dropdown on outside mousedown
   useEffect(() => {
     if (!open) return
-    const close = () => setOpen(false)
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false); setCreatingNew(false); setNewName('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  const handleCreate = () => {
+    const name = newName.trim()
+    if (!name) return
+    onCreate(name)
+    setCreatingNew(false); setNewName(''); setOpen(false)
+  }
+
   return (
-    <div className={`profile-dropdown${open ? ' open' : ''}`}>
-      <button
-        className="profile-btn"
-        onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
-      >
+    <div className={`profile-dropdown${open ? ' open' : ''}`} ref={containerRef}>
+      <button className="profile-btn" onClick={() => setOpen(o => !o)}>
         <svg className="profile-grid-icon" viewBox="0 0 14 14" fill="currentColor">
           <rect x="0" y="0" width="5.5" height="5.5" rx="1" />
           <rect x="8.5" y="0" width="5.5" height="5.5" rx="1" />
           <rect x="0" y="8.5" width="5.5" height="5.5" rx="1" />
           <rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1" />
         </svg>
-        <span className="profile-name">{profile}</span>
+        <span className="profile-name">{activeProfile}</span>
         <svg className="profile-chevron" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path d="M1 1l4 4 4-4" />
         </svg>
       </button>
 
       {open && (
-        <div className="profile-menu" onClick={e => e.stopPropagation()}>
-          <button className="profile-menu-item active">
-            <span>Default Profile</span>
-            <svg viewBox="0 0 12 10" fill="none" stroke="currentColor" strokeWidth="2" width="12">
-              <polyline points="1,5 4.5,9 11,1" />
-            </svg>
-          </button>
+        <div className="profile-menu">
+          {profiles.map(name => (
+            <div key={name} className={`profile-menu-row${name === activeProfile ? ' active' : ''}`}>
+              <button
+                className="profile-menu-item-name"
+                onClick={() => { onSwitch(name); setOpen(false) }}
+              >
+                <span>{name}</span>
+                {name === activeProfile && (
+                  <svg viewBox="0 0 12 10" fill="none" stroke="currentColor" strokeWidth="2" width="11">
+                    <polyline points="1,5 4.5,9 11,1" />
+                  </svg>
+                )}
+              </button>
+              {name !== activeProfile && (
+                <button
+                  className="profile-menu-item-delete"
+                  title={`Delete "${name}"`}
+                  onClick={() => onDelete(name)}
+                >
+                  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+                    <path d="M1 1l10 10M11 1L1 11" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          ))}
+
           <div className="profile-menu-divider" />
-          <button className="profile-menu-item">New Profile…</button>
-          <button className="profile-menu-item">Duplicate Profile</button>
+
+          {creatingNew ? (
+            <div className="profile-new-form">
+              <input
+                className="profile-new-input"
+                placeholder="Profile name"
+                value={newName}
+                maxLength={60}
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleCreate()
+                  if (e.key === 'Escape') { setCreatingNew(false); setNewName('') }
+                }}
+                autoFocus
+              />
+              <button
+                className="profile-new-confirm"
+                onClick={handleCreate}
+                disabled={!newName.trim()}
+                title="Create profile"
+              >
+                <svg viewBox="0 0 12 10" fill="none" stroke="currentColor" strokeWidth="2.5" width="11">
+                  <polyline points="1,5 4.5,9 11,1" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button className="profile-menu-item" onClick={() => setCreatingNew(true)}>
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+                <path d="M6 1v10M1 6h10" strokeLinecap="round" />
+              </svg>
+              New Profile
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -545,7 +610,7 @@ function MultiActionEditor({ actions, onChange }) {
 }
 
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile'])
 
 // Sub-action types available inside a Multi Action (no nesting)
 const SUB_ACTION_TYPES = [
@@ -578,7 +643,7 @@ function dispatchSubAction(sd, act) {
   return Promise.resolve()
 }
 
-function ActionSection({ action, onChange }) {
+function ActionSection({ action, onChange, profiles = [] }) {
   const [picking, setPicking] = useState(false)
 
   // ── assigned: sleep-toggle ──
@@ -706,6 +771,37 @@ function ActionSection({ action, onChange }) {
     )
   }
 
+  // ── assigned: switch-profile ──
+  if (action?.type === 'switch-profile') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <path d="M3 8h8M7.5 5l3.5 3-3.5 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Switch Profile</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <span className="prop-label-sm">Target profile</span>
+        <select
+          className="prop-input"
+          value={action.profileName ?? ''}
+          onChange={e => onChange({ action: { type: 'switch-profile', profileName: e.target.value } })}
+        >
+          <option value="">— pick a profile —</option>
+          {profiles.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        {!action.profileName && (
+          <p className="action-hint">Select the profile to switch to when this button is pressed.</p>
+        )}
+      </div>
+    )
+  }
+
   // ── assigned: multi-action ──
   if (action?.type === 'multi-action') {
     return (
@@ -751,6 +847,8 @@ function ActionSection({ action, onChange }) {
                   ? { type: 'run-cmd', command: '' }
                   : a.id === 'multi-action'
                   ? { type: 'multi-action', actions: [] }
+                  : a.id === 'switch-profile'
+                  ? { type: 'switch-profile', profileName: '' }
                   : { type: 'open-app', target: '', mode: 'gtk-launch' }
                 onChange({ action: defaults })
                 setPicking(false)
@@ -775,7 +873,7 @@ function ActionSection({ action, onChange }) {
   )
 }
 
-function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize }) {
+function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles }) {
   const fileInputRef = useRef(null)
   const [showLibrary, setShowLibrary] = useState(false)
 
@@ -806,7 +904,7 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize }) {
       <div className="properties-body">
         <div className="prop-section">
           <span className="prop-label">Action</span>
-          <ActionSection action={config?.action} onChange={onChange} />
+          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} />
         </div>
 
         <div className="prop-section">
@@ -933,10 +1031,14 @@ export default function App() {
   const [buttonConfigs, setButtonConfigs] = useState({})
   const [iconSize,      setIconSize]      = useState(72)
   const [contextMenu,   setContextMenu]   = useState(null)
+  const [activeProfile, setActiveProfile] = useState('Default Profile')
+  const [profiles,      setProfiles]      = useState(['Default Profile'])
 
-  // Keep a ref so event handlers registered once can always see latest configs
+  // Keep refs so event handlers registered once always see latest values
   const buttonConfigsRef = useRef({})
+  const deviceRef        = useRef(null)
   useEffect(() => { buttonConfigsRef.current = buttonConfigs }, [buttonConfigs])
+  useEffect(() => { deviceRef.current = device }, [device])
 
   // Composite icon + title on canvas → send RGBA to hardware
   const drawHardwareButton = async (index, config) => {
@@ -977,6 +1079,28 @@ export default function App() {
     window.streamDeck.setButtonIcon(index, Array.from(data))
   }
 
+  // Ref always points to the latest drawHardwareButton (captures current iconSize)
+  const drawHardwareButtonRef = useRef(null)
+  drawHardwareButtonRef.current = drawHardwareButton
+
+  // Helper: load a named profile, update all state, redraw hardware
+  const loadProfileData = async (name) => {
+    const result = await window.streamDeck?.switchProfile(name)
+    if (!result?.ok) return false
+    const buttons = result.data?.buttons ?? {}
+    setActiveProfile(name)
+    setButtonConfigs(buttons)
+    const rows  = deviceRef.current?.rows ?? 3
+    const cols  = deviceRef.current?.cols ?? 5
+    const total = rows * cols
+    for (let i = 0; i < total; i++) {
+      drawHardwareButtonRef.current(i, buttons[i])
+    }
+    return true
+  }
+  const loadProfileDataRef = useRef(null)
+  loadProfileDataRef.current = loadProfileData
+
   const updateConfig = (index, updates) => {
     setButtonConfigs(prev => {
       const next = { title: '', iconDataUrl: null, bgColor: '#262626', ...prev[index], ...updates }
@@ -992,15 +1116,22 @@ export default function App() {
     setContextMenu(null)
   }
 
-  // Load saved profile once on startup and redraw all hardware buttons
+  // Load profiles list + active profile once on startup, then load button configs
   useEffect(() => {
-    if (!window.streamDeck?.loadProfile) return
-    window.streamDeck.loadProfile().then(saved => {
-      if (!saved?.buttons) return
-      setButtonConfigs(saved.buttons)
-      Object.entries(saved.buttons).forEach(([idx, cfg]) => {
-        drawHardwareButton(Number(idx), cfg)
-      })
+    if (!window.streamDeck) return
+    Promise.all([
+      window.streamDeck.listProfiles?.(),
+      window.streamDeck.getActiveProfile?.(),
+      window.streamDeck.loadProfile?.(),
+    ]).then(([list, activeName, saved]) => {
+      if (list?.length) setProfiles(list)
+      if (activeName)   setActiveProfile(activeName)
+      if (saved?.buttons) {
+        setButtonConfigs(saved.buttons)
+        Object.entries(saved.buttons).forEach(([idx, cfg]) => {
+          drawHardwareButtonRef.current(Number(idx), cfg)
+        })
+      }
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1008,10 +1139,10 @@ export default function App() {
   useEffect(() => {
     if (!window.streamDeck?.saveProfile) return
     const timer = setTimeout(() => {
-      window.streamDeck.saveProfile({ name: 'Default Profile', buttons: buttonConfigs })
+      window.streamDeck.saveProfile({ name: activeProfile, buttons: buttonConfigs })
     }, 500)
     return () => clearTimeout(timer)
-  }, [buttonConfigs])
+  }, [buttonConfigs, activeProfile])
 
   useEffect(() => {
     if (!window.streamDeck) return
@@ -1032,6 +1163,13 @@ export default function App() {
         window.streamDeck.runCommand(action.command)
       } else if (action?.type === 'sleep-toggle') {
         window.streamDeck.sleepToggle()
+      } else if (action?.type === 'switch-profile' && action.profileName) {
+        loadProfileDataRef.current(action.profileName).then(ok => {
+          if (ok) {
+            // Refresh the profiles list (newly created profiles may now appear)
+            window.streamDeck.listProfiles?.().then(list => { if (list?.length) setProfiles(list) })
+          }
+        })
       } else if (action?.type === 'multi-action' && action.actions?.length) {
         const sd = window.streamDeck
         ;(async () => {
@@ -1072,7 +1210,28 @@ export default function App() {
       {/* ── Topbar ── */}
       <header className="topbar">
         <div className="topbar-left">
-          <ProfileDropdown profile="Default Profile" />
+          <ProfileSwitcher
+            activeProfile={activeProfile}
+            profiles={profiles}
+            onSwitch={name => loadProfileDataRef.current(name)}
+            onCreate={async name => {
+              const result = await window.streamDeck?.createProfile(name)
+              if (result?.ok) {
+                setProfiles(prev => [...prev, result.name].sort((a, b) => a.localeCompare(b)))
+                setActiveProfile(result.name)
+                setButtonConfigs({})
+                const rows  = deviceRef.current?.rows ?? 3
+                const cols  = deviceRef.current?.cols ?? 5
+                for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, undefined)
+              }
+            }}
+            onDelete={async name => {
+              const result = await window.streamDeck?.deleteProfile(name)
+              if (result?.ok) {
+                setProfiles(prev => prev.filter(p => p !== name))
+              }
+            }}
+          />
         </div>
 
         <div className="topbar-right">
@@ -1164,6 +1323,7 @@ export default function App() {
             config={buttonConfigs[selectedKey]}
             onChange={updates => updateConfig(selectedKey, updates)}
             iconSize={iconSize}
+            profiles={profiles}
           />
         )}
       </div>

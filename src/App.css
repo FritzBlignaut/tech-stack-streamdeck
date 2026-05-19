@@ -98,7 +98,7 @@
 .profile-menu-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   width: 100%;
   padding: 8px 10px;
   border-radius: 5px;
@@ -106,20 +106,112 @@
   font-size: 13px;
   cursor: pointer;
   transition: background 0.1s;
+  background: none;
+  border: none;
+  text-align: left;
 }
 
 .profile-menu-item:hover {
   background: #303030;
 }
 
+.profile-menu-row {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+  transition: background 0.1s;
+}
+.profile-menu-row:hover {
+  background: #303030;
+}
+.profile-menu-row.active .profile-menu-item-name {
+  color: #5a9cf5;
+}
+
+.profile-menu-item-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: #e0e0e0;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  gap: 8px;
+  min-width: 0;
+}
+.profile-menu-item-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-menu-item-delete {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  line-height: 0;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.profile-menu-item-delete:hover {
+  color: #e55;
+  background: rgba(255,80,80,0.1);
+}
+
 .profile-menu-item.active {
-  color: #0082ff;
+  color: #5a9cf5;
 }
 
 .profile-menu-divider {
   height: 1px;
   background: #333;
   margin: 4px 0;
+}
+
+.profile-new-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.profile-new-input {
+  flex: 1;
+  padding: 5px 8px;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 12px;
+  outline: none;
+}
+.profile-new-input:focus {
+  border-color: #5a9cf5;
+}
+
+.profile-new-confirm {
+  padding: 5px 7px;
+  background: #5a9cf5;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  line-height: 0;
+  transition: background 0.15s;
+}
+.profile-new-confirm:hover:not(:disabled) {
+  background: #4a8ce0;
+}
+.profile-new-confirm:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ─── Device chip ────────────────────────────────────────── */
@@ -541,6 +633,17 @@
   color: #4a4a4a;
   text-transform: uppercase;
   margin-bottom: 10px;
+}
+
+.prop-label-sm {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  color: #555;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  margin-top: 8px;
 }
 
 .prop-empty-action {
