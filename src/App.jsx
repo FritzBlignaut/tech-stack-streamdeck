@@ -424,8 +424,159 @@ function OpenAppEditor({ target, mode, onChange }) {
   )
 }
 
+// ─── Sub-Action Row ─────────────────────────────────────────
+function SubActionRow({ subAction, onChange, onRemove }) {
+  const label = SUB_ACTION_TYPES.find(t => t.id === subAction.type)?.name ?? subAction.type
+  return (
+    <div className="sub-action-row">
+      <div className="sub-action-header">
+        <span className="sub-action-label">{label}</span>
+        <button className="sub-action-remove" onClick={onRemove} title="Remove">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+            <path d="M1 1l10 10M11 1L1 11" />
+          </svg>
+        </button>
+      </div>
+      <div className="sub-action-body">
+        {subAction.type === 'hotkey' && (
+          <HotkeyEditor
+            value={subAction.keys ?? ''}
+            onChange={keys => onChange({ ...subAction, keys })}
+          />
+        )}
+        {subAction.type === 'open-app' && (
+          <OpenAppEditor
+            target={subAction.target ?? ''}
+            mode={subAction.mode ?? 'gtk-launch'}
+            onChange={updates => onChange({ ...subAction, ...updates })}
+          />
+        )}
+        {subAction.type === 'open-url' && (
+          <input
+            className="prop-input"
+            type="url"
+            placeholder="https://example.com"
+            value={subAction.url ?? ''}
+            onChange={e => onChange({ ...subAction, url: e.target.value })}
+          />
+        )}
+        {subAction.type === 'run-cmd' && (
+          <textarea
+            className="prop-input run-cmd-input"
+            placeholder="bash command…"
+            value={subAction.command ?? ''}
+            onChange={e => onChange({ ...subAction, command: e.target.value })}
+            rows={2}
+            spellCheck={false}
+          />
+        )}
+        {subAction.type === 'delay' && (
+          <div className="delay-input-row">
+            <input
+              className="prop-input"
+              type="number"
+              min="0"
+              max="60000"
+              step="100"
+              value={subAction.ms ?? 500}
+              onChange={e => onChange({ ...subAction, ms: Math.max(0, Number(e.target.value)) })}
+            />
+            <span className="delay-unit">ms</span>
+          </div>
+        )}
+        {subAction.type === 'sleep-toggle' && (
+          <p className="action-hint">Puts the deck to sleep.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Multi Action Editor ─────────────────────────────────────
+function MultiActionEditor({ actions, onChange }) {
+  const [addingNew, setAddingNew] = useState(false)
+
+  const addSubAction = (type) => {
+    onChange([...actions, { ...SUB_ACTION_DEFAULTS[type] }])
+    setAddingNew(false)
+  }
+
+  const updateAt = (i, updated) => {
+    const next = [...actions]; next[i] = updated; onChange(next)
+  }
+
+  const removeAt = (i) => onChange(actions.filter((_, idx) => idx !== i))
+
+  return (
+    <div className="multi-action-editor">
+      {actions.length === 0 && !addingNew && (
+        <p className="action-hint">No steps yet — add one below.</p>
+      )}
+
+      {actions.map((sub, i) => (
+        <SubActionRow
+          key={i}
+          subAction={sub}
+          onChange={updated => updateAt(i, updated)}
+          onRemove={() => removeAt(i)}
+        />
+      ))}
+
+      {addingNew ? (
+        <div className="sub-action-type-picker">
+          {SUB_ACTION_TYPES.map(t => (
+            <button key={t.id} className="sub-action-type-item" onClick={() => addSubAction(t.id)}>
+              <span className="sub-action-type-icon">{t.icon}</span>
+              <span>{t.name}</span>
+            </button>
+          ))}
+          <button className="sub-action-cancel" onClick={() => setAddingNew(false)}>Cancel</button>
+        </div>
+      ) : (
+        <button className="multi-action-add-btn" onClick={() => setAddingNew(true)}>
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" width="10" height="10">
+            <path d="M6 1v10M1 6h10" strokeLinecap="round" />
+          </svg>
+          Add step
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action'])
+
+// Sub-action types available inside a Multi Action (no nesting)
+const SUB_ACTION_TYPES = [
+  { id: 'hotkey',       name: 'Hotkey',           icon: '⌫' },
+  { id: 'open-app',     name: 'Open Application', icon: '⎈' },
+  { id: 'open-url',     name: 'Open URL',         icon: '⊕' },
+  { id: 'run-cmd',      name: 'Run Command',      icon: '›_' },
+  { id: 'sleep-toggle', name: 'Sleep',            icon: '☽' },
+  { id: 'delay',        name: 'Delay',            icon: '⏱' },
+]
+
+const SUB_ACTION_DEFAULTS = {
+  'hotkey':       { type: 'hotkey',       keys: '' },
+  'open-app':     { type: 'open-app',     target: '', mode: 'gtk-launch' },
+  'open-url':     { type: 'open-url',     url: '' },
+  'run-cmd':      { type: 'run-cmd',      command: '' },
+  'sleep-toggle': { type: 'sleep-toggle' },
+  'delay':        { type: 'delay',        ms: 500 },
+}
+
+// Dispatches a single leaf action — returns a Promise
+function dispatchSubAction(sd, act) {
+  if (!act || !sd) return Promise.resolve()
+  if (act.type === 'hotkey'       && act.keys)    return sd.executeHotkey(act.keys)
+  if (act.type === 'open-app'     && act.target)  return sd.openApplication(act.target, act.mode ?? 'gtk-launch')
+  if (act.type === 'open-url'     && act.url)     return sd.openUrl(act.url)
+  if (act.type === 'run-cmd'      && act.command) return sd.runCommand(act.command)
+  if (act.type === 'sleep-toggle')                return sd.sleepToggle()
+  if (act.type === 'delay')                       return new Promise(r => setTimeout(r, act.ms ?? 500))
+  return Promise.resolve()
+}
 
 function ActionSection({ action, onChange }) {
   const [picking, setPicking] = useState(false)
@@ -555,6 +706,30 @@ function ActionSection({ action, onChange }) {
     )
   }
 
+  // ── assigned: multi-action ──
+  if (action?.type === 'multi-action') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <path d="M3 5l4 3-4 3V5z" fill="currentColor" stroke="none" />
+            <path d="M9 5l4 3-4 3V5z" fill="currentColor" stroke="none" />
+          </svg>
+          <span>Multi Action</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <MultiActionEditor
+          actions={action.actions ?? []}
+          onChange={actions => onChange({ action: { type: 'multi-action', actions } })}
+        />
+      </div>
+    )
+  }
+
   // ── unassigned ──
   return (
     <div className="unassigned-action">
@@ -574,6 +749,8 @@ function ActionSection({ action, onChange }) {
                   ? { type: 'open-url', url: '' }
                   : a.id === 'run-cmd'
                   ? { type: 'run-cmd', command: '' }
+                  : a.id === 'multi-action'
+                  ? { type: 'multi-action', actions: [] }
                   : { type: 'open-app', target: '', mode: 'gtk-launch' }
                 onChange({ action: defaults })
                 setPicking(false)
@@ -855,6 +1032,13 @@ export default function App() {
         window.streamDeck.runCommand(action.command)
       } else if (action?.type === 'sleep-toggle') {
         window.streamDeck.sleepToggle()
+      } else if (action?.type === 'multi-action' && action.actions?.length) {
+        const sd = window.streamDeck
+        ;(async () => {
+          for (const sub of action.actions) {
+            await dispatchSubAction(sd, sub)
+          }
+        })()
       }
     })
     const offUp = window.streamDeck.onKeyUp(({ index }) => {
