@@ -215,6 +215,22 @@ async function initStreamDeck() {
     })
   })
 
+  // IPC: open a URL in the default browser
+  ipcMain.handle('action:open-url', async (_, { url }) => {
+    if (!url?.trim()) return { error: 'No URL specified' }
+    const safe = url.trim()
+    // Only allow http/https/ftp — block file:// and other schemes
+    if (!/^https?:\/\//i.test(safe) && !/^ftp:\/\//i.test(safe)) {
+      return { error: 'Only http/https/ftp URLs are allowed' }
+    }
+    return new Promise((resolve) => {
+      const proc = spawn('xdg-open', [safe], { detached: true, stdio: 'ignore', env: process.env })
+      proc.unref()
+      proc.once('spawn', () => resolve({ code: 0 }))
+      proc.once('error', (err) => resolve({ error: err.message }))
+    })
+  })
+
   // IPC: sleep / wake toggle — triggered by renderer when a sleep-toggle action fires
   ipcMain.handle('action:sleep-toggle', async () => {
     if (isSleeping) {
