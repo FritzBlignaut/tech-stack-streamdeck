@@ -599,6 +599,14 @@
   color: #3a3a3a;
 }
 
+.run-cmd-input {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 60px;
+}
+
 .prop-color-row {
   display: flex;
   align-items: center;

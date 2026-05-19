@@ -231,6 +231,21 @@ async function initStreamDeck() {
     })
   })
 
+  // IPC: run an arbitrary shell command via bash -c
+  ipcMain.handle('action:run-cmd', async (_, { command }) => {
+    if (!command?.trim()) return { error: 'No command specified' }
+    return new Promise((resolve) => {
+      const proc = spawn('bash', ['-c', command.trim()], {
+        detached: true,
+        stdio: 'ignore',
+        env: process.env,
+      })
+      proc.unref()
+      proc.once('spawn', () => resolve({ code: 0 }))
+      proc.once('error', (err) => resolve({ error: err.message }))
+    })
+  })
+
   // IPC: sleep / wake toggle — triggered by renderer when a sleep-toggle action fires
   ipcMain.handle('action:sleep-toggle', async () => {
     if (isSleeping) {

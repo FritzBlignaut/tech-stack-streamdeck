@@ -425,7 +425,7 @@ function OpenAppEditor({ target, mode, onChange }) {
 }
 
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'sleep-toggle'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle'])
 
 function ActionSection({ action, onChange }) {
   const [picking, setPicking] = useState(false)
@@ -446,6 +446,35 @@ function ActionSection({ action, onChange }) {
           </button>
         </div>
         <p className="action-hint">Puts the deck to sleep. Any button press wakes it.</p>
+      </div>
+    )
+  }
+
+  // ── assigned: run-cmd ──
+  if (action?.type === 'run-cmd') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <rect x="1" y="3" width="14" height="10" rx="1.5" />
+            <path d="M4 7l2.5 2L4 11" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M9 11h3" strokeLinecap="round" />
+          </svg>
+          <span>Run Command</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <textarea
+          className="prop-input run-cmd-input"
+          placeholder={`e.g. mkdir -p ~/Pictures/Screenshots && gnome-screenshot -f ~/Pictures/Screenshots/$(date +%Y%m%d_%H%M%S).png`}
+          value={action.command ?? ''}
+          onChange={e => onChange({ action: { type: 'run-cmd', command: e.target.value } })}
+          rows={3}
+          spellCheck={false}
+        />
       </div>
     )
   }
@@ -543,6 +572,8 @@ function ActionSection({ action, onChange }) {
                   ? { type: 'sleep-toggle' }
                   : a.id === 'open-url'
                   ? { type: 'open-url', url: '' }
+                  : a.id === 'run-cmd'
+                  ? { type: 'run-cmd', command: '' }
                   : { type: 'open-app', target: '', mode: 'gtk-launch' }
                 onChange({ action: defaults })
                 setPicking(false)
@@ -820,6 +851,8 @@ export default function App() {
         window.streamDeck.openApplication(action.target, action.mode ?? 'gtk-launch')
       } else if (action?.type === 'open-url' && action.url) {
         window.streamDeck.openUrl(action.url)
+      } else if (action?.type === 'run-cmd' && action.command) {
+        window.streamDeck.runCommand(action.command)
       } else if (action?.type === 'sleep-toggle') {
         window.streamDeck.sleepToggle()
       }
