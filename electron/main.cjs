@@ -8,8 +8,11 @@ const { spawn } = require('child_process')
 let mainWindow
 let libraryDir = null
 let activeProfileName = 'Default Profile'
-let tray       = null
-let isQuitting = false
+let tray           = null
+let isQuitting     = false
+let deck           = null   // current Stream Deck connection
+let isSleeping     = false  // hardware sleep state
+let reconnectTimer = null   // USB reconnect polling timer
 
 // ── Tray icon: 22×22 PNG of a 5×3 button grid, no extra deps ─
 function createTrayIconPng() {
@@ -135,124 +138,11 @@ function createWindow() {
   })
 }
 
-async function initStreamDeck() {
-  const { listStreamDecks, openStreamDeck } = require('@elgato-stream-deck/node')
-
-  let devices
-  try {
-    devices = await listStreamDecks()
-  } catch (err) {
-    console.error('[StreamDeck] Failed to list devices:', err.message)
-    return
-  }
-
-  if (devices.length === 0) {
-    console.log('[StreamDeck] No devices found — is it plugged in and do udev rules apply?')
-    return
-  }
-
-  const deviceInfo = devices[0]
-  console.log(`[StreamDeck] Found: ${deviceInfo.model}  path: ${deviceInfo.path}`)
-
-  let deck
-  try {
-    deck = await openStreamDeck(deviceInfo.path)
-  } catch (err) {
-    console.error('[StreamDeck] Failed to open device:', err.message)
-    return
-  }
-
-  const buttonControls = deck.CONTROLS.filter(c => c.type === 'button')
-  const rows = Math.max(...buttonControls.map(c => c.row)) + 1
-  const cols = Math.max(...buttonControls.map(c => c.column)) + 1
-  let isSleeping = false
-
-  // Get pixel size from the first LCD button (feedbackType 'lcd' = has a display)
-  const lcdButtons = buttonControls.filter(c => c.feedbackType === 'lcd')
-  const ICON_SIZE = lcdButtons.length > 0 ? lcdButtons[0].pixelSize.width : null
-  console.log(`[StreamDeck] Icon size: ${ICON_SIZE}px  (${lcdButtons.length} LCD buttons, ${buttonControls.length} total)`)
-
-  // Build an RGB pixel buffer: a filled circle of (r,g,b) on a dark background.
-  // This proves pixel-level hardware control (Phase 1 test image requirement).
-  function circleBuffer(r, g, b) {
-    const buf = Buffer.alloc(ICON_SIZE * ICON_SIZE * 3, 0)
-    const cx = ICON_SIZE / 2
-    const cy = ICON_SIZE / 2
-    const radius = ICON_SIZE * 0.38
-    for (let y = 0; y < ICON_SIZE; y++) {
-      for (let x = 0; x < ICON_SIZE; x++) {
-        const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-        const i = (y * ICON_SIZE + x) * 3
-        if (dist <= radius) {
-          buf[i] = r; buf[i + 1] = g; buf[i + 2] = b
-        } else {
-          buf[i] = 18; buf[i + 1] = 18; buf[i + 2] = 18
-        }
-      }
-    }
-    return buf
-  }
-
-  // Restore brightness when waking — renderer redraws icons from profile
-  async function drawAwakeState() {
-    await deck.setBrightness(100)
-  }
-
-  // Start with a clean panel; renderer will draw icons once the profile loads
-  await deck.clearPanel()
-  await drawAwakeState()
-  console.log('[StreamDeck] Device ready')
-
-  deck.on('down', async (control) => {
-    if (isSleeping) {
-      // Any button press wakes the deck
-      isSleeping = false
-      await drawAwakeState()
-      sendToRenderer('deck:wake', {})
-      console.log('[StreamDeck] Wake')
-      return
-    }
-
-    // Flash the pressed button blue
-    if (ICON_SIZE) {
-      await deck.fillKeyBuffer(control.index, circleBuffer(0, 130, 255), { format: 'rgb' })
-    } else {
-      await deck.fillKeyColor(control.index, 0, 130, 255)
-    }
-    console.log(`[StreamDeck] KEY DOWN  index=${control.index}  row=${control.row}  col=${control.column}`)
-    sendToRenderer('deck:down', { index: control.index, row: control.row, column: control.column })
-  })
-
-  deck.on('up', async (control) => {
-    if (isSleeping) return
-    // Don't blank the button here — the renderer will redraw it with the user's config
-    console.log(`[StreamDeck] KEY UP    index=${control.index}  row=${control.row}  col=${control.column}`)
-    sendToRenderer('deck:up', { index: control.index, row: control.row, column: control.column })
-  })
-
-  deck.on('error', (err) => {
-    console.error('[StreamDeck] Device error:', err)
-  })
-
-  console.log('[StreamDeck] Ready — press a button!')
-
-  // Compute grid dimensions from the controls manifest — already done above
-
-  const sendInfo = () => sendToRenderer('deck:info', {
-    model: deviceInfo.model,
-    productName: deck.PRODUCT_NAME,
-    serialNumber: deviceInfo.serialNumber,
-    rows,
-    cols,
-    iconSize: ICON_SIZE ?? 72,
-  })
-
-  // IPC: execute a hotkey via xdotool (Linux only)
+// ── IPC handlers — registered once; use module-level deck/state ─────────────
+function registerIpcHandlers() {
+  // Hotkey via xdotool (Linux)
   ipcMain.handle('action:hotkey', async (_, { keys }) => {
-    // Allow only safe xdotool key names: letters, digits, F-keys, modifiers joined by +
-    if (!keys || !/^[a-zA-Z0-9+_-]+$/.test(keys)) {
-      return { error: 'Invalid hotkey string' }
-    }
+    if (!keys || !/^[a-zA-Z0-9+_-]+$/.test(keys)) return { error: 'Invalid hotkey string' }
     return new Promise((resolve) => {
       const proc = spawn('xdotool', ['key', '--clearmodifiers', '--', keys], { stdio: 'ignore' })
       proc.on('close', (code) => resolve({ code }))
@@ -260,44 +150,30 @@ async function initStreamDeck() {
     })
   })
 
-  // IPC: open application via xdg-open or direct binary
   ipcMain.handle('action:open-app', async (_, { target, mode }) => {
     if (!target?.trim()) return { error: 'No target specified' }
     const safeTarget = target.trim()
     let cmd, args
     if (mode === 'direct') {
-      // Split so "flatpak run com.obsproject.Studio" → cmd=flatpak args=[run, ...]
-      const parts = safeTarget.split(/\s+/)
-      cmd  = parts[0]
-      args = parts.slice(1)
+      const parts = safeTarget.split(/\s+/); cmd = parts[0]; args = parts.slice(1)
     } else if (mode === 'xdg-open') {
-      cmd  = 'xdg-open'
-      args = [safeTarget]
+      cmd = 'xdg-open'; args = [safeTarget]
     } else {
-      // default: gtk-launch — resolves .desktop IDs including Flatpak apps
-      cmd  = 'gtk-launch'
-      args = [safeTarget]
+      cmd = 'gtk-launch'; args = [safeTarget]
     }
     console.log('[open-app] spawning:', cmd, args)
     return new Promise((resolve) => {
       const proc = spawn(cmd, args, { detached: true, stdio: 'ignore', env: process.env })
       proc.unref()
       proc.once('spawn', () => resolve({ code: 0 }))
-      proc.once('error', (err) => {
-        console.error('[open-app] error:', err.message)
-        resolve({ error: err.message })
-      })
+      proc.once('error', (err) => { console.error('[open-app] error:', err.message); resolve({ error: err.message }) })
     })
   })
 
-  // IPC: open a URL in the default browser
   ipcMain.handle('action:open-url', async (_, { url }) => {
     if (!url?.trim()) return { error: 'No URL specified' }
     const safe = url.trim()
-    // Only allow http/https/ftp — block file:// and other schemes
-    if (!/^https?:\/\//i.test(safe) && !/^ftp:\/\//i.test(safe)) {
-      return { error: 'Only http/https/ftp URLs are allowed' }
-    }
+    if (!/^https?:\/\//i.test(safe) && !/^ftp:\/\//i.test(safe)) return { error: 'Only http/https/ftp URLs are allowed' }
     return new Promise((resolve) => {
       const proc = spawn('xdg-open', [safe], { detached: true, stdio: 'ignore', env: process.env })
       proc.unref()
@@ -306,26 +182,21 @@ async function initStreamDeck() {
     })
   })
 
-  // IPC: run an arbitrary shell command via bash -c
   ipcMain.handle('action:run-cmd', async (_, { command }) => {
     if (!command?.trim()) return { error: 'No command specified' }
     return new Promise((resolve) => {
-      const proc = spawn('bash', ['-c', command.trim()], {
-        detached: true,
-        stdio: 'ignore',
-        env: process.env,
-      })
+      const proc = spawn('bash', ['-c', command.trim()], { detached: true, stdio: 'ignore', env: process.env })
       proc.unref()
       proc.once('spawn', () => resolve({ code: 0 }))
       proc.once('error', (err) => resolve({ error: err.message }))
     })
   })
 
-  // IPC: sleep / wake toggle — triggered by renderer when a sleep-toggle action fires
   ipcMain.handle('action:sleep-toggle', async () => {
+    if (!deck) return
     if (isSleeping) {
       isSleeping = false
-      await drawAwakeState()
+      await deck.setBrightness(100)
       sendToRenderer('deck:wake', {})
       console.log('[StreamDeck] Wake (action)')
     } else {
@@ -337,16 +208,11 @@ async function initStreamDeck() {
     }
   })
 
-  // IPC: open native file-picker so renderer can browse for a binary
   ipcMain.handle('dialog:open-file', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select Application',
-      properties: ['openFile'],
-    })
+    const result = await dialog.showOpenDialog(mainWindow, { title: 'Select Application', properties: ['openFile'] })
     return result.canceled ? null : result.filePaths[0]
   })
 
-  // IPC: save / load profile JSON
   ipcMain.handle('profile:save', async (_, data) => {
     const p = getProfilePath(activeProfileName)
     await fs.promises.mkdir(path.dirname(p), { recursive: true })
@@ -354,26 +220,19 @@ async function initStreamDeck() {
   })
 
   ipcMain.handle('profile:load', async () => {
-    try {
-      const raw = await fs.promises.readFile(getProfilePath(activeProfileName), 'utf8')
-      return JSON.parse(raw)
-    } catch {
-      return null
-    }
+    try { return JSON.parse(await fs.promises.readFile(getProfilePath(activeProfileName), 'utf8')) }
+    catch { return null }
   })
 
   ipcMain.handle('profile:list', async () => {
     try {
-      const dir = app.getPath('userData')
-      const files = await fs.promises.readdir(dir)
+      const files = await fs.promises.readdir(app.getPath('userData'))
       const names = files
         .filter(f => f.endsWith('.json') && !f.startsWith('.'))
         .map(f => f.slice(0, -5))
         .sort((a, b) => a.localeCompare(b))
       return names.length ? names : ['Default Profile']
-    } catch {
-      return ['Default Profile']
-    }
+    } catch { return ['Default Profile'] }
   })
 
   ipcMain.handle('profile:get-active', async () => activeProfileName)
@@ -381,57 +240,155 @@ async function initStreamDeck() {
   ipcMain.handle('profile:switch', async (_, { name }) => {
     if (!name || typeof name !== 'string') return { ok: false, error: 'Invalid name' }
     try {
-      const raw = await fs.promises.readFile(getProfilePath(name), 'utf8')
-      const data = JSON.parse(raw)
+      const data = JSON.parse(await fs.promises.readFile(getProfilePath(name), 'utf8'))
       activeProfileName = name
       return { ok: true, data }
-    } catch (e) {
-      return { ok: false, error: e.message }
-    }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 
   ipcMain.handle('profile:create', async (_, { name }) => {
     if (!name || typeof name !== 'string') return { ok: false, error: 'Invalid name' }
-    const safe = name.trim().replace(/[\/\\:*?"<>|]/g, '')
+    const safe = name.trim().replace(/[/\\:*?"<>|]/g, '')
     if (!safe) return { ok: false, error: 'Invalid profile name' }
     const p = getProfilePath(safe)
-    try { await fs.promises.access(p); return { ok: false, error: 'Profile already exists' } } catch { /* doesn\'t exist — good */ }
-    const empty = { name: safe, buttons: {} }
-    await fs.promises.writeFile(p, JSON.stringify(empty, null, 2), 'utf8')
+    try { await fs.promises.access(p); return { ok: false, error: 'Profile already exists' } } catch { /* doesn't exist — good */ }
+    await fs.promises.writeFile(p, JSON.stringify({ name: safe, buttons: {} }, null, 2), 'utf8')
     activeProfileName = safe
     return { ok: true, name: safe }
   })
 
   ipcMain.handle('profile:delete', async (_, { name }) => {
     if (name === activeProfileName) return { ok: false, error: 'Cannot delete the active profile' }
-    try {
-      await fs.promises.unlink(getProfilePath(name))
-      return { ok: true }
-    } catch (e) {
-      return { ok: false, error: e.message }
-    }
+    try { await fs.promises.unlink(getProfilePath(name)); return { ok: true } }
+    catch (e) { return { ok: false, error: e.message } }
   })
 
-  // IPC: renderer sends RGBA pixel data → draw on physical button
   ipcMain.handle('button:setIcon', async (_, { index, rgbaData }) => {
     if (!deck) return
-    if (rgbaData) {
-      await deck.fillKeyBuffer(index, Buffer.from(rgbaData), { format: 'rgba' })
-    } else {
-      // null = clear to black
-      await deck.fillKeyColor(index, 0, 0, 0)
+    if (rgbaData) await deck.fillKeyBuffer(index, Buffer.from(rgbaData), { format: 'rgba' })
+    else          await deck.fillKeyColor(index, 0, 0, 0)
+  })
+}
+
+// ── Open a Stream Deck and wire up its events ─────────────────────────────────
+async function connectDeck() {
+  const { listStreamDecks, openStreamDeck } = require('@elgato-stream-deck/node')
+
+  let devices
+  try { devices = await listStreamDecks() }
+  catch (err) { console.error('[StreamDeck] Failed to list devices:', err.message); return }
+
+  if (!devices.length) {
+    console.log('[StreamDeck] No devices found — is it plugged in and do udev rules apply?')
+    return
+  }
+
+  const deviceInfo = devices[0]
+  console.log(`[StreamDeck] Found: ${deviceInfo.model}  path: ${deviceInfo.path}`)
+
+  let newDeck
+  try { newDeck = await openStreamDeck(deviceInfo.path) }
+  catch (err) { console.error('[StreamDeck] Failed to open device:', err.message); return }
+
+  deck       = newDeck
+  isSleeping = false
+
+  const buttonControls = newDeck.CONTROLS.filter(c => c.type === 'button')
+  const rows = Math.max(...buttonControls.map(c => c.row)) + 1
+  const cols = Math.max(...buttonControls.map(c => c.column)) + 1
+
+  const lcdButtons = buttonControls.filter(c => c.feedbackType === 'lcd')
+  const ICON_SIZE = lcdButtons.length > 0 ? lcdButtons[0].pixelSize.width : null
+  console.log(`[StreamDeck] Icon size: ${ICON_SIZE}px  (${lcdButtons.length} LCD buttons, ${buttonControls.length} total)`)
+
+  function circleBuffer(r, g, b) {
+    const buf = Buffer.alloc(ICON_SIZE * ICON_SIZE * 3, 0)
+    const cx = ICON_SIZE / 2, cy = ICON_SIZE / 2, radius = ICON_SIZE * 0.38
+    for (let y = 0; y < ICON_SIZE; y++) {
+      for (let x = 0; x < ICON_SIZE; x++) {
+        const i = (y * ICON_SIZE + x) * 3
+        const inside = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) <= radius
+        buf[i] = inside ? r : 18; buf[i+1] = inside ? g : 18; buf[i+2] = inside ? b : 18
+      }
     }
+    return buf
+  }
+
+  await newDeck.clearPanel()
+  await newDeck.setBrightness(100)
+  console.log('[StreamDeck] Device ready')
+
+  newDeck.on('down', async (control) => {
+    if (isSleeping) {
+      isSleeping = false
+      await newDeck.setBrightness(100)
+      sendToRenderer('deck:wake', {})
+      console.log('[StreamDeck] Wake')
+      return
+    }
+    if (ICON_SIZE) await newDeck.fillKeyBuffer(control.index, circleBuffer(0, 130, 255), { format: 'rgb' })
+    else           await newDeck.fillKeyColor(control.index, 0, 130, 255)
+    console.log(`[StreamDeck] KEY DOWN  index=${control.index}  row=${control.row}  col=${control.column}`)
+    sendToRenderer('deck:down', { index: control.index, row: control.row, column: control.column })
   })
 
-  if (mainWindow.webContents.isLoading()) {
+  newDeck.on('up', async (control) => {
+    if (isSleeping) return
+    console.log(`[StreamDeck] KEY UP    index=${control.index}  row=${control.row}  col=${control.column}`)
+    sendToRenderer('deck:up', { index: control.index, row: control.row, column: control.column })
+  })
+
+  newDeck.on('error', async (err) => {
+    if (deck !== newDeck) return  // stale handler from a previous connection
+    console.error('[StreamDeck] Device error — treating as disconnect:', err.message ?? err)
+    deck       = null
+    isSleeping = false
+    try { await newDeck.close() } catch {}
+    sendToRenderer('deck:disconnect', {})
+    scheduleReconnect()
+  })
+
+  const sendInfo = () => sendToRenderer('deck:info', {
+    model:        deviceInfo.model,
+    productName:  newDeck.PRODUCT_NAME,
+    serialNumber: deviceInfo.serialNumber,
+    rows,
+    cols,
+    iconSize: ICON_SIZE ?? 72,
+  })
+
+  if (mainWindow?.webContents.isLoading()) {
     mainWindow.webContents.once('did-finish-load', sendInfo)
   } else {
     sendInfo()
   }
+}
+
+// ── Reconnect polling — starts whenever the device goes away ─────────────────
+function scheduleReconnect() {
+  if (reconnectTimer) return
+  console.log('[StreamDeck] Reconnect polling started (every 2 s)…')
+  reconnectTimer = setInterval(async () => {
+    if (deck) { clearInterval(reconnectTimer); reconnectTimer = null; return }
+    const { listStreamDecks } = require('@elgato-stream-deck/node')
+    let devices
+    try { devices = await listStreamDecks() } catch { return }
+    if (!devices.length) return
+    clearInterval(reconnectTimer)
+    reconnectTimer = null
+    console.log('[StreamDeck] Device found — reconnecting…')
+    await connectDeck()
+  }, 2000)
+}
+
+async function initStreamDeck() {
+  registerIpcHandlers()
+  await connectDeck()
+  if (!deck) scheduleReconnect()
 
   app.on('before-quit', () => {
-    deck.clearPanel().catch(() => {})
-    deck.close().catch(() => {})
+    if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null }
+    if (deck) { deck.clearPanel().catch(() => {}); deck.close().catch(() => {}) }
   })
 }
 

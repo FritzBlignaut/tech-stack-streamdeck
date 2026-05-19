@@ -1593,9 +1593,14 @@ export default function App() {
       // Redraw the hardware button to restore the user's icon after the press-flash
       drawHardwareButton(index, buttonConfigsRef.current[index])
     })
-    const offSleep = window.streamDeck.onSleep(() => { stopAllGifAnimationsRef.current?.(); setSleeping(true) })
-    const offWake  = window.streamDeck.onWake(()  => setSleeping(false))
-    return () => { offInfo(); offDown(); offUp(); offSleep(); offWake() }
+    const offSleep       = window.streamDeck.onSleep(() => { stopAllGifAnimationsRef.current?.(); setSleeping(true) })
+    const offWake        = window.streamDeck.onWake(()  => setSleeping(false))
+    const offDisconnect  = window.streamDeck.onDisconnect?.(() => {
+      stopAllGifAnimationsRef.current?.()
+      setDevice(null)
+      setSleeping(false)
+    })
+    return () => { offInfo(); offDown(); offUp(); offSleep(); offWake(); offDisconnect?.() }
   }, [])
 
   // When waking, re-draw every hardware button with the stored config
@@ -1605,6 +1610,17 @@ export default function App() {
       drawHardwareButton(Number(idx), cfg)
     })
   }, [sleeping]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On reconnect: hardware is dark — redraw all buttons from current config
+  useEffect(() => {
+    if (!device) return
+    const entries = Object.entries(buttonConfigsRef.current)
+    if (!entries.length) return  // first startup: profile-load effect handles drawing
+    const total = (device.rows ?? 3) * (device.cols ?? 5)
+    for (let i = 0; i < total; i++) {
+      drawHardwareButtonRef.current(i, buttonConfigsRef.current[i])
+    }
+  }, [device]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows        = device?.rows ?? 3
   const cols        = device?.cols ?? 5
