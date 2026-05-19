@@ -759,3 +759,150 @@
 .context-menu-item.danger:hover {
   background: #2a1a1a;
 }
+
+/* ── Action section ──────────────────────────────────── */
+.assigned-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  background: #1e2a3a;
+  border: 1px solid #1e4a8a;
+  border-radius: 7px;
+  color: #5aabff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.action-remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #3a5a8a;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  transition: color 0.1s;
+}
+
+.action-remove:hover { color: #e05555; }
+
+.action-type-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #1e1e1e;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.action-type-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: #cccccc;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.action-type-item:hover:not(.disabled) { background: #2a2a2a; }
+
+.action-type-item.disabled {
+  color: #444;
+  cursor: default;
+}
+
+.action-type-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.action-type-soon {
+  margin-left: auto;
+  font-size: 10px;
+  color: #3a3a3a;
+  background: #222;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* ── Hotkey recorder ─────────────────────────────────── */
+.hotkey-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hotkey-recorder {
+  flex: 1;
+  padding: 8px 12px;
+  background: #181818;
+  border: 1px solid #2e2e2e;
+  border-radius: 7px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.hotkey-recorder:hover,
+.hotkey-recorder:focus { border-color: #0082ff; }
+
+.hotkey-recorder.recording {
+  border-color: #0082ff;
+  background: #0d1a2e;
+  animation: pulse-border 1s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: #0082ff; }
+  50%       { border-color: #0050aa; }
+}
+
+.hotkey-keys {
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 12px;
+  color: #5aabff;
+  letter-spacing: 0.04em;
+}
+
+.hotkey-hint {
+  font-size: 12px;
+  color: #3a3a3a;
+  font-style: italic;
+}
+
+.hotkey-clear {
+  background: none;
+  border: 1px solid #2e2e2e;
+  border-radius: 5px;
+  color: #555;
+  cursor: pointer;
+  padding: 5px 7px;
+  display: flex;
+  align-items: center;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.hotkey-clear:hover {
+  color: #e05555;
+  border-color: #703030;
+}

@@ -1,8 +1,9 @@
 'use strict'
 
 const { app, BrowserWindow, ipcMain } = require('electron')
-const path = require('path')
-const fs   = require('fs')
+const path   = require('path')
+const fs     = require('fs')
+const { spawn } = require('child_process')
 
 let mainWindow
 
@@ -143,9 +144,7 @@ async function initStreamDeck() {
 
   deck.on('up', async (control) => {
     if (isSleeping) return
-    if (control.index !== 0) {
-      await deck.fillKeyColor(control.index, 0, 0, 0)
-    }
+    // Don't blank the button here — the renderer will redraw it with the user's config
     console.log(`[StreamDeck] KEY UP    index=${control.index}  row=${control.row}  col=${control.column}`)
     sendToRenderer('deck:up', { index: control.index, row: control.row, column: control.column })
   })
@@ -165,6 +164,19 @@ async function initStreamDeck() {
     rows,
     cols,
     iconSize: ICON_SIZE ?? 72,
+  })
+
+  // IPC: execute a hotkey via xdotool (Linux only)
+  ipcMain.handle('action:hotkey', async (_, { keys }) => {
+    // Allow only safe xdotool key names: letters, digits, F-keys, modifiers joined by +
+    if (!keys || !/^[a-zA-Z0-9+_-]+$/.test(keys)) {
+      return { error: 'Invalid hotkey string' }
+    }
+    return new Promise((resolve) => {
+      const proc = spawn('xdotool', ['key', '--clearmodifiers', '--', keys], { stdio: 'ignore' })
+      proc.on('close', (code) => resolve({ code }))
+      proc.on('error', (err)  => resolve({ error: err.message }))
+    })
   })
 
   // IPC: save / load profile JSON

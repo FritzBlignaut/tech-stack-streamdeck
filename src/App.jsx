@@ -178,6 +178,139 @@ function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonCo
 }
 
 // ─── Properties Panel ───────────────────────────────────────
+
+// Convert a browser KeyboardEvent to an xdotool key string, e.g. "ctrl+shift+a"
+function toXdotoolKey(e) {
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null // modifier-only press
+  const KEY_MAP = {
+    ' ': 'space', Enter: 'Return', Escape: 'Escape', Tab: 'Tab',
+    Backspace: 'BackSpace', Delete: 'Delete', Insert: 'Insert',
+    Home: 'Home', End: 'End', PageUp: 'Prior', PageDown: 'Next',
+    ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down',
+    F1:'F1', F2:'F2', F3:'F3',  F4:'F4',  F5:'F5',  F6:'F6',
+    F7:'F7', F8:'F8', F9:'F9', F10:'F10', F11:'F11', F12:'F12',
+  }
+  const parts = []
+  if (e.ctrlKey)  parts.push('ctrl')
+  if (e.altKey)   parts.push('alt')
+  if (e.shiftKey) parts.push('shift')
+  if (e.metaKey)  parts.push('super')
+  const keyName = KEY_MAP[e.key] ?? (e.key.length === 1 ? e.key.toLowerCase() : null)
+  if (!keyName) return null
+  parts.push(keyName)
+  return parts.join('+')
+}
+
+// ─── Hotkey Recorder ────────────────────────────────────────
+function HotkeyEditor({ value, onChange }) {
+  const [recording, setRecording] = useState(false)
+
+  const startRecording = () => setRecording(true)
+
+  const handleKeyDown = (e) => {
+    if (!recording) return
+    e.preventDefault()
+    if (e.key === 'Escape') { setRecording(false); return }
+    const combo = toXdotoolKey(e)
+    if (combo) {
+      onChange(combo)
+      setRecording(false)
+    }
+  }
+
+  return (
+    <div className="hotkey-editor">
+      <div
+        className={`hotkey-recorder${recording ? ' recording' : ''}`}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        onBlur={() => setRecording(false)}
+        onClick={startRecording}
+        role="button"
+        aria-label="Record hotkey"
+      >
+        {recording
+          ? <span className="hotkey-hint">Press a key combination…</span>
+          : value
+            ? <span className="hotkey-keys">{value}</span>
+            : <span className="hotkey-hint">Click to record</span>
+        }
+      </div>
+      {value && !recording && (
+        <button className="hotkey-clear" onClick={() => onChange('')} title="Clear hotkey">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="10" height="10">
+            <path d="M1 1l10 10M11 1L1 11" />
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Action Picker ───────────────────────────────────────────
+const ACTION_TYPE_LABELS = {
+  hotkey:   'Hotkey',
+}
+
+function ActionSection({ action, onChange }) {
+  const [picking, setPicking] = useState(false)
+
+  if (action?.type === 'hotkey') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <rect x="1" y="4" width="14" height="9" rx="1.5" />
+            <path d="M4 7h1M7 7h1M10 7h1M4 10h8" strokeLinecap="round" />
+          </svg>
+          <span>Hotkey</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <HotkeyEditor
+          value={action.keys ?? ''}
+          onChange={keys => onChange({ action: { type: 'hotkey', keys } })}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="unassigned-action">
+      {picking ? (
+        <div className="action-type-list">
+          {ACTION_CATEGORIES.flatMap(cat => cat.actions).map(a => (
+            <button
+              key={a.id}
+              className={`action-type-item${a.id !== 'hotkey' ? ' disabled' : ''}`}
+              onClick={() => {
+                if (a.id !== 'hotkey') return
+                onChange({ action: { type: 'hotkey', keys: '' } })
+                setPicking(false)
+              }}
+            >
+              <span className="action-type-icon">{a.icon}</span>
+              <span>{a.name}</span>
+              {a.id !== 'hotkey' && <span className="action-type-soon">soon</span>}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <button className="prop-empty-action" onClick={() => setPicking(true)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="20">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v8M8 12h8" />
+          </svg>
+          <span>Assign an action</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
 function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize }) {
   const fileInputRef = useRef(null)
 
@@ -208,13 +341,7 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize }) {
       <div className="properties-body">
         <div className="prop-section">
           <span className="prop-label">Action</span>
-          <button className="prop-empty-action">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="20">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 8v8M8 12h8" />
-            </svg>
-            <span>Assign an action</span>
-          </button>
+          <ActionSection action={config?.action} onChange={onChange} />
         </div>
 
         <div className="prop-section">
@@ -328,6 +455,10 @@ export default function App() {
   const [iconSize,      setIconSize]      = useState(72)
   const [contextMenu,   setContextMenu]   = useState(null)
 
+  // Keep a ref so event handlers registered once can always see latest configs
+  const buttonConfigsRef = useRef({})
+  useEffect(() => { buttonConfigsRef.current = buttonConfigs }, [buttonConfigs])
+
   // Composite icon + title on canvas → send RGBA to hardware
   const drawHardwareButton = async (index, config) => {
     if (!window.streamDeck?.setButtonIcon || !iconSize) return
@@ -409,8 +540,18 @@ export default function App() {
       setDevice(info)
       if (info.iconSize) setIconSize(info.iconSize)
     })
-    window.streamDeck.onKeyDown(({ index }) => setPressedKey(index))
-    window.streamDeck.onKeyUp(({ index })   => setPressedKey(p => p === index ? null : p))
+    window.streamDeck.onKeyDown(({ index }) => {
+      setPressedKey(index)
+      const action = buttonConfigsRef.current[index]?.action
+      if (action?.type === 'hotkey' && action.keys) {
+        window.streamDeck.executeHotkey(action.keys)
+      }
+    })
+    window.streamDeck.onKeyUp(({ index }) => {
+      setPressedKey(p => p === index ? null : p)
+      // Redraw the hardware button to restore the user's icon after the press-flash
+      drawHardwareButton(index, buttonConfigsRef.current[index])
+    })
     window.streamDeck.onSleep(() => setSleeping(true))
     window.streamDeck.onWake(()  => setSleeping(false))
   }, [])
