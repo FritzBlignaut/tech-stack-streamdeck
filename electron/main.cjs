@@ -7,6 +7,11 @@ const { spawn } = require('child_process')
 
 let mainWindow
 let libraryDir = null
+let activeProfileName = 'Default Profile'
+
+function getProfilePath(name) {
+  return path.join(app.getPath('userData'), `${name}.json`)
+}
 
 // Recursively walk a directory and collect image file paths
 function scanDir(dirPath, maxFiles = 5000) {
@@ -272,20 +277,68 @@ async function initStreamDeck() {
   })
 
   // IPC: save / load profile JSON
-  const profileDir  = app.getPath('userData')
-  const profilePath = path.join(profileDir, 'Default Profile.json')
-
   ipcMain.handle('profile:save', async (_, data) => {
-    await fs.promises.mkdir(profileDir, { recursive: true })
-    await fs.promises.writeFile(profilePath, JSON.stringify(data, null, 2), 'utf8')
+    const p = getProfilePath(activeProfileName)
+    await fs.promises.mkdir(path.dirname(p), { recursive: true })
+    await fs.promises.writeFile(p, JSON.stringify(data, null, 2), 'utf8')
   })
 
   ipcMain.handle('profile:load', async () => {
     try {
-      const raw = await fs.promises.readFile(profilePath, 'utf8')
+      const raw = await fs.promises.readFile(getProfilePath(activeProfileName), 'utf8')
       return JSON.parse(raw)
     } catch {
       return null
+    }
+  })
+
+  ipcMain.handle('profile:list', async () => {
+    try {
+      const dir = app.getPath('userData')
+      const files = await fs.promises.readdir(dir)
+      const names = files
+        .filter(f => f.endsWith('.json') && !f.startsWith('.'))
+        .map(f => f.slice(0, -5))
+        .sort((a, b) => a.localeCompare(b))
+      return names.length ? names : ['Default Profile']
+    } catch {
+      return ['Default Profile']
+    }
+  })
+
+  ipcMain.handle('profile:get-active', async () => activeProfileName)
+
+  ipcMain.handle('profile:switch', async (_, { name }) => {
+    if (!name || typeof name !== 'string') return { ok: false, error: 'Invalid name' }
+    try {
+      const raw = await fs.promises.readFile(getProfilePath(name), 'utf8')
+      const data = JSON.parse(raw)
+      activeProfileName = name
+      return { ok: true, data }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    }
+  })
+
+  ipcMain.handle('profile:create', async (_, { name }) => {
+    if (!name || typeof name !== 'string') return { ok: false, error: 'Invalid name' }
+    const safe = name.trim().replace(/[\/\\:*?"<>|]/g, '')
+    if (!safe) return { ok: false, error: 'Invalid profile name' }
+    const p = getProfilePath(safe)
+    try { await fs.promises.access(p); return { ok: false, error: 'Profile already exists' } } catch { /* doesn\'t exist — good */ }
+    const empty = { name: safe, buttons: {} }
+    await fs.promises.writeFile(p, JSON.stringify(empty, null, 2), 'utf8')
+    activeProfileName = safe
+    return { ok: true, name: safe }
+  })
+
+  ipcMain.handle('profile:delete', async (_, { name }) => {
+    if (name === activeProfileName) return { ok: false, error: 'Cannot delete the active profile' }
+    try {
+      await fs.promises.unlink(getProfilePath(name))
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e.message }
     }
   })
 
