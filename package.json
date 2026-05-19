@@ -9,7 +9,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "electron .",
+    "electron:dev": "VITE_PORT=$(ss -tlnp 2>/dev/null | grep -oE ':517[3-9]' | tr -d ':' | head -1 || echo 5173) electron .",
     "rebuild": "electron-rebuild -f -w node-hid"
   },
   "dependencies": {
