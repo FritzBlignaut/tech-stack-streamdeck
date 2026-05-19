@@ -196,12 +196,24 @@ function ActionsPanel() {
 
             {expanded[cat.id] && (
               <div className="category-actions">
-                {cat.actions.map(action => (
-                  <div key={action.id} className="action-item" draggable>
-                    <div className="action-icon">{action.icon}</div>
-                    <span className="action-name">{action.name}</span>
-                  </div>
-                ))}
+                {cat.actions.map(action => {
+                  const enabled = ENABLED_ACTIONS.has(action.id)
+                  return (
+                    <div
+                      key={action.id}
+                      className={`action-item${enabled ? '' : ' disabled'}`}
+                      draggable={enabled}
+                      onDragStart={e => {
+                        e.dataTransfer.setData('application/stream-deck-action', action.id)
+                        e.dataTransfer.effectAllowed = 'copy'
+                      }}
+                    >
+                      <div className="action-icon">{action.icon}</div>
+                      <span className="action-name">{action.name}</span>
+                      {!enabled && <span className="action-soon-badge">soon</span>}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -212,7 +224,9 @@ function ActionsPanel() {
 }
 
 // ─── Button Grid ────────────────────────────────────────────
-function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonConfigs, onContextMenu }) {
+function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonConfigs, onContextMenu, onDropAction }) {
+  const [dragOverIndex, setDragOverIndex] = useState(null)
+
   return (
     <div className="button-grid" style={{ '--cols': cols }}>
       {Array.from({ length: rows * cols }, (_, i) => {
@@ -222,9 +236,10 @@ function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonCo
             key={i}
             className={[
               'deck-btn',
-              selectedKey === i ? 'selected' : '',
-              pressedKey  === i ? 'pressed'  : '',
-              cfg?.iconDataUrl   ? 'has-icon'  : '',
+              selectedKey  === i ? 'selected'  : '',
+              pressedKey   === i ? 'pressed'   : '',
+              dragOverIndex === i ? 'drag-over' : '',
+              cfg?.iconDataUrl    ? 'has-icon'  : '',
             ].join(' ').trim()}
             style={{
               backgroundImage: cfg?.iconDataUrl ? `url(${cfg.iconDataUrl})` : 'none',
@@ -232,6 +247,22 @@ function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonCo
             }}
             onClick={() => onSelectKey(i)}
             onContextMenu={e => { e.preventDefault(); onContextMenu(e, i) }}
+            onDragOver={e => {
+              if (!e.dataTransfer.types.includes('application/stream-deck-action')) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setDragOverIndex(i)
+            }}
+            onDragLeave={e => {
+              if (e.currentTarget.contains(e.relatedTarget)) return
+              setDragOverIndex(null)
+            }}
+            onDrop={e => {
+              e.preventDefault()
+              setDragOverIndex(null)
+              const actionId = e.dataTransfer.getData('application/stream-deck-action')
+              if (actionId) onDropAction?.(i, actionId)
+            }}
             aria-label={`Button ${i + 1}`}
           >
             {!cfg?.iconDataUrl && <span className="deck-btn-index">{i + 1}</span>}
@@ -629,6 +660,17 @@ const SUB_ACTION_DEFAULTS = {
   'run-cmd':      { type: 'run-cmd',      command: '' },
   'sleep-toggle': { type: 'sleep-toggle' },
   'delay':        { type: 'delay',        ms: 500 },
+}
+
+// Default configs for top-level button actions (used by drag-and-drop and the picker)
+const ACTION_DEFAULTS = {
+  'hotkey':         { type: 'hotkey',         keys: '' },
+  'open-app':       { type: 'open-app',       target: '', mode: 'gtk-launch' },
+  'open-url':       { type: 'open-url',       url: '' },
+  'run-cmd':        { type: 'run-cmd',        command: '' },
+  'sleep-toggle':   { type: 'sleep-toggle' },
+  'multi-action':   { type: 'multi-action',   actions: [] },
+  'switch-profile': { type: 'switch-profile', profileName: '' },
 }
 
 // Dispatches a single leaf action — returns a Promise
@@ -1283,6 +1325,12 @@ export default function App() {
                   onSelectKey={handleSelect}
                   buttonConfigs={buttonConfigs}
                   onContextMenu={(e, i) => setContextMenu({ x: e.clientX, y: e.clientY, keyIndex: i })}
+                  onDropAction={(index, actionId) => {
+                    const action = ACTION_DEFAULTS[actionId]
+                    if (!action) return
+                    updateConfig(index, { action })
+                    setSelectedKey(index)
+                  }}
                 />
               </div>
 
