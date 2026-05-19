@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, Tray, Menu, nativeImage } = require('electron')
 const path   = require('path')
 const fs     = require('fs')
 const { spawn } = require('child_process')
@@ -8,6 +8,71 @@ const { spawn } = require('child_process')
 let mainWindow
 let libraryDir = null
 let activeProfileName = 'Default Profile'
+let tray       = null
+let isQuitting = false
+
+// ── Tray icon: 22×22 PNG of a 5×3 button grid, no extra deps ─
+function createTrayIconPng() {
+  const { deflateSync } = require('zlib')
+  const W = 22, H = 22
+  const BG = [30, 30, 30]    // #1e1e1e
+  const FG = [90, 156, 245]  // #5a9cf5
+  const colStarts = [2, 6, 10, 14, 18]  // 5 cols, 3 px wide, 1 px gap
+  const rowStarts = [4, 9, 14]          // 3 rows, 3 px tall, 2 px gap
+
+  const rawRows = []
+  for (let y = 0; y < H; y++) {
+    rawRows.push(0)  // PNG filter byte: none
+    for (let x = 0; x < W; x++) {
+      const isBtn = colStarts.some(cx => x >= cx && x < cx + 3) &&
+                    rowStarts.some(ry => y >= ry && y < ry + 3)
+      rawRows.push(...(isBtn ? FG : BG))
+    }
+  }
+
+  const CRC = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320 ^ (c >>> 1) : c >>> 1
+    CRC[n] = c
+  }
+  function crc32(buf) {
+    let c = 0xFFFFFFFF
+    for (const b of buf) c = CRC[(c ^ b) & 0xFF] ^ (c >>> 8)
+    return (c ^ 0xFFFFFFFF) >>> 0
+  }
+  function mkChunk(type, data) {
+    const t   = Buffer.from(type, 'ascii')
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0)
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([t, data])), 0)
+    return Buffer.concat([len, t, data, crc])
+  }
+
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4)
+  ihdr[8] = 8; ihdr[9] = 2  // 8-bit, RGB
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+    mkChunk('IHDR', ihdr),
+    mkChunk('IDAT', deflateSync(Buffer.from(rawRows))),
+    mkChunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+function createTray() {
+  const icon = nativeImage.createFromBuffer(createTrayIconPng())
+  tray = new Tray(icon)
+  tray.setToolTip('Tech Stack Stream Deck')
+  const menu = Menu.buildFromTemplate([
+    { label: 'Show Window', click: () => { mainWindow?.show(); mainWindow?.focus() } },
+    { type: 'separator' },
+    { label: 'Quit',        click: () => { isQuitting = true; app.quit() } },
+  ])
+  tray.setContextMenu(menu)
+  // Left-click shows window (works on Windows/KDE; GNOME AppIndicator ignores it)
+  tray.on('click', () => { mainWindow?.show(); mainWindow?.focus() })
+}
 
 function getProfilePath(name) {
   return path.join(app.getPath('userData'), `${name}.json`)
@@ -62,6 +127,11 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+
+  // Hide to tray on close unless a real quit was requested
+  mainWindow.on('close', e => {
+    if (!isQuitting) { e.preventDefault(); mainWindow.hide() }
   })
 }
 
@@ -384,6 +454,7 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+  createTray()
   await initStreamDeck()
 
   // IPC: icon library — open folder picker
@@ -425,6 +496,16 @@ app.whenReady().then(async () => {
   })
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+// Tray keeps the process alive when the window is hidden
+app.on('window-all-closed', () => {})
+
+// Allow OS-level quit (shutdown, pkill) to bypass the hide intercept
+app.on('before-quit', () => { isQuitting = true })
+
+// Single-instance: second launch focuses the existing window instead
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => { mainWindow?.show(); mainWindow?.focus() })
+}
