@@ -1025,12 +1025,24 @@
   background: #303030;
 }
 
+.context-menu-item:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
 .context-menu-item.danger {
   color: #e05555;
 }
 
 .context-menu-item.danger:hover {
   background: #2a1a1a;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: #333;
+  margin: 4px 2px;
 }
 
 /* ── Action section ──────────────────────────────────── */
