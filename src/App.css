@@ -382,14 +382,33 @@
   border-radius: 5px;
   margin: 1px 6px;
   transition: background 0.1s;
+  user-select: none;
 }
 
-.action-item:hover {
+.action-item.disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.action-item:not(.disabled):hover {
   background: #232323;
 }
 
-.action-item:active {
+.action-item:not(.disabled):active {
   cursor: grabbing;
+}
+
+.action-soon-badge {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 600;
+  color: #666;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 1px 4px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .action-icon {
@@ -471,6 +490,13 @@
   background: #1a1a1a;
   transform: scale(0.93);
   border-color: #444;
+}
+
+.deck-btn.drag-over {
+  border-color: #5a9cf5;
+  background: #1a2540 !important;
+  box-shadow: 0 0 0 2px rgba(90, 156, 245, 0.35), inset 0 0 0 1px rgba(90, 156, 245, 0.2);
+  transform: scale(1.04);
 }
 
 .deck-btn-index {
