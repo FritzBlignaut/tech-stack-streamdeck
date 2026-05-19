@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { parseGIF, decompressFrames } from 'gifuct-js'
 import './App.css'
 
 const DEVICE_MODEL_NAMES = {
@@ -10,6 +11,88 @@ const DEVICE_MODEL_NAMES = {
   plus:       'Stream Deck +',
   neo:        'Stream Deck Neo',
   pedal:      'Stream Deck Pedal',
+}
+
+// ─── GIF frame extractor (module-level, no React) ──────────
+// Returns [{ rgbaData: number[], delay: number }] or null if not an animated GIF
+async function extractGifFrames(dataUrl, iconSize, title) {
+  try {
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+    const binary = atob(base64)
+    const bytes  = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+
+    const gif    = parseGIF(bytes.buffer)
+    const frames = decompressFrames(gif, true)
+    if (frames.length < 2) return null   // single frame — no animation needed
+
+    const gw = gif.lsd.width
+    const gh = gif.lsd.height
+
+    // Native-size composite canvas
+    const native    = document.createElement('canvas')
+    native.width    = gw
+    native.height   = gh
+    const nativeCtx = native.getContext('2d')
+
+    // Output canvas scaled to iconSize
+    const out    = document.createElement('canvas')
+    out.width    = iconSize
+    out.height   = iconSize
+    const outCtx = out.getContext('2d')
+
+    // Scratch canvas for patching
+    const patch    = document.createElement('canvas')
+    const patchCtx = patch.getContext('2d')
+
+    const result = []
+    let prevSnap = null
+
+    for (const frame of frames) {
+      const { dims, patch: px, delay, disposalType } = frame
+
+      if (disposalType === 3) prevSnap = nativeCtx.getImageData(0, 0, gw, gh)
+
+      patch.width  = dims.width
+      patch.height = dims.height
+      patchCtx.putImageData(new ImageData(new Uint8ClampedArray(px), dims.width, dims.height), 0, 0)
+      nativeCtx.drawImage(patch, dims.left, dims.top)
+
+      outCtx.clearRect(0, 0, iconSize, iconSize)
+      outCtx.drawImage(native, 0, 0, iconSize, iconSize)
+
+      if (title) {
+        const fs = Math.round(iconSize * 0.15)
+        outCtx.font          = `bold ${fs}px -apple-system, sans-serif`
+        outCtx.fillStyle     = '#ffffff'
+        outCtx.textAlign     = 'center'
+        outCtx.textBaseline  = 'bottom'
+        outCtx.shadowColor   = 'rgba(0,0,0,0.95)'
+        outCtx.shadowBlur    = 5
+        outCtx.shadowOffsetY = 1
+        outCtx.fillText(title, iconSize / 2, iconSize - Math.round(iconSize * 0.04))
+        outCtx.shadowColor   = 'transparent'
+        outCtx.shadowBlur    = 0
+        outCtx.shadowOffsetY = 0
+      }
+
+      result.push({
+        rgbaData: Array.from(outCtx.getImageData(0, 0, iconSize, iconSize).data),
+        delay:    Math.max((delay || 10) * 10, 50),   // centiseconds → ms, min 50ms
+      })
+
+      if (disposalType === 2) {
+        nativeCtx.clearRect(dims.left, dims.top, dims.width, dims.height)
+      } else if (disposalType === 3 && prevSnap) {
+        nativeCtx.putImageData(prevSnap, 0, 0)
+        prevSnap = null
+      }
+    }
+    return result
+  } catch (e) {
+    console.error('GIF decode error:', e)
+    return null
+  }
 }
 
 // ─── Folder navigation helpers (pure, module-level) ─────────
@@ -1240,10 +1323,17 @@ export default function App() {
   // Composite icon + title on canvas → send RGBA to hardware
   const drawHardwareButton = async (index, config) => {
     if (!window.streamDeck?.setButtonIcon || !iconSize) return
+    stopGifAnimation(index)                              // always cancel existing animation
     const { iconDataUrl, title, bgColor } = config || {}
 
     if (!iconDataUrl && !title) {
       window.streamDeck.setButtonIcon(index, null)
+      return
+    }
+
+    // Animated GIF → hand off to the animation loop
+    if (iconDataUrl?.startsWith('data:image/gif')) {
+      startGifAnimation(index, config)
       return
     }
 
@@ -1279,6 +1369,47 @@ export default function App() {
   // Ref always points to the latest drawHardwareButton (captures current iconSize)
   const drawHardwareButtonRef = useRef(null)
   drawHardwareButtonRef.current = drawHardwareButton
+
+  // ── GIF animation manager ──────────────────────────────────
+  // gifAnimationsRef: { [buttonIndex]: { token: object, timer: number|null } }
+  const gifAnimationsRef = useRef({})
+
+  const stopGifAnimation = (index) => {
+    const anim = gifAnimationsRef.current[index]
+    if (anim) {
+      if (anim.timer != null) clearTimeout(anim.timer)
+      delete gifAnimationsRef.current[index]
+    }
+  }
+
+  const stopAllGifAnimations = () => {
+    for (const anim of Object.values(gifAnimationsRef.current)) {
+      if (anim?.timer != null) clearTimeout(anim.timer)
+    }
+    gifAnimationsRef.current = {}
+  }
+  const stopAllGifAnimationsRef = useRef(null)
+  stopAllGifAnimationsRef.current = stopAllGifAnimations
+
+  const startGifAnimation = async (index, config) => {
+    const token = {}
+    gifAnimationsRef.current[index] = { token, timer: null }
+
+    const frames = await extractGifFrames(config.iconDataUrl, iconSize, config.title ?? '')
+    // Bail if animation was stopped or replaced while decoding
+    if (gifAnimationsRef.current[index]?.token !== token) return
+    if (!frames?.length) { delete gifAnimationsRef.current[index]; return }
+
+    let frameIdx = 0
+    const tick = () => {
+      if (gifAnimationsRef.current[index]?.token !== token) return
+      const frame = frames[frameIdx]
+      window.streamDeck?.setButtonIcon(index, frame.rgbaData)
+      frameIdx = (frameIdx + 1) % frames.length
+      gifAnimationsRef.current[index].timer = setTimeout(tick, frame.delay)
+    }
+    tick()
+  }
 
   // Helper: load a named profile, update all state, redraw hardware
   const loadProfileData = async (name) => {
@@ -1462,7 +1593,7 @@ export default function App() {
       // Redraw the hardware button to restore the user's icon after the press-flash
       drawHardwareButton(index, buttonConfigsRef.current[index])
     })
-    const offSleep = window.streamDeck.onSleep(() => setSleeping(true))
+    const offSleep = window.streamDeck.onSleep(() => { stopAllGifAnimationsRef.current?.(); setSleeping(true) })
     const offWake  = window.streamDeck.onWake(()  => setSleeping(false))
     return () => { offInfo(); offDown(); offUp(); offSleep(); offWake() }
   }, [])

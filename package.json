@@ -16,6 +16,7 @@
     "@elgato-stream-deck/node": "^7.6.2",
     "electron": "^42.1.0",
     "electron-store": "^11.0.2",
+    "gifuct-js": "^2.1.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "sharp": "^0.34.5"
