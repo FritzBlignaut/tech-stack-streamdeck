@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path   = require('path')
 const fs     = require('fs')
 const { spawn } = require('child_process')
@@ -177,6 +177,45 @@ async function initStreamDeck() {
       proc.on('close', (code) => resolve({ code }))
       proc.on('error', (err)  => resolve({ error: err.message }))
     })
+  })
+
+  // IPC: open application via xdg-open or direct binary
+  ipcMain.handle('action:open-app', async (_, { target, mode }) => {
+    if (!target?.trim()) return { error: 'No target specified' }
+    const safeTarget = target.trim()
+    let cmd, args
+    if (mode === 'direct') {
+      // Split so "flatpak run com.obsproject.Studio" → cmd=flatpak args=[run, ...]
+      const parts = safeTarget.split(/\s+/)
+      cmd  = parts[0]
+      args = parts.slice(1)
+    } else if (mode === 'xdg-open') {
+      cmd  = 'xdg-open'
+      args = [safeTarget]
+    } else {
+      // default: gtk-launch — resolves .desktop IDs including Flatpak apps
+      cmd  = 'gtk-launch'
+      args = [safeTarget]
+    }
+    console.log('[open-app] spawning:', cmd, args)
+    return new Promise((resolve) => {
+      const proc = spawn(cmd, args, { detached: true, stdio: 'ignore', env: process.env })
+      proc.unref()
+      proc.once('spawn', () => resolve({ code: 0 }))
+      proc.once('error', (err) => {
+        console.error('[open-app] error:', err.message)
+        resolve({ error: err.message })
+      })
+    })
+  })
+
+  // IPC: open native file-picker so renderer can browse for a binary
+  ipcMain.handle('dialog:open-file', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Application',
+      properties: ['openFile'],
+    })
+    return result.canceled ? null : result.filePaths[0]
   })
 
   // IPC: save / load profile JSON

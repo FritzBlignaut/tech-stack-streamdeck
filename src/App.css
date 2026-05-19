@@ -906,3 +906,87 @@
   color: #e05555;
   border-color: #703030;
 }
+
+/* ── Open App editor ─────────────────────────────────── */
+.open-app-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.open-app-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.open-app-input-row .prop-input {
+  flex: 1;
+}
+
+.browse-btn {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  background: #1e1e1e;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  color: #666;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.browse-btn:hover {
+  color: #aaa;
+  border-color: #444;
+}
+
+.open-app-mode-toggle {
+  display: none; /* replaced by open-app-modes */
+}
+
+.open-app-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.open-app-mode-option {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+  transition: background 0.1s;
+}
+
+.open-app-mode-option:hover { background: #1e1e1e; }
+
+.open-app-mode-option.active {
+  background: #1a2030;
+  color: #aaa;
+}
+
+.open-app-mode-option input[type="radio"] {
+  accent-color: #0082ff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.open-app-mode-label {
+  font-weight: 500;
+  color: #888;
+  min-width: 68px;
+}
+
+.open-app-mode-option.active .open-app-mode-label { color: #5aabff; }
+
+.open-app-mode-hint {
+  font-size: 10px;
+  color: #444;
+  font-style: italic;
+}

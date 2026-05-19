@@ -247,14 +247,63 @@ function HotkeyEditor({ value, onChange }) {
   )
 }
 
-// ─── Action Picker ───────────────────────────────────────────
-const ACTION_TYPE_LABELS = {
-  hotkey:   'Hotkey',
+// ─── Open App Editor ────────────────────────────────────────
+function OpenAppEditor({ target, mode, onChange }) {
+  const browseFile = async () => {
+    const file = await window.streamDeck?.browseForFile()
+    if (file) onChange({ target: file })
+  }
+
+  return (
+    <div className="open-app-editor">
+      <div className="open-app-input-row">
+        <input
+          className="prop-input"
+          type="text"
+          placeholder={
+            mode === 'gtk-launch' ? 'e.g. com.obsproject.Studio  or  firefox' :
+            mode === 'xdg-open'   ? 'e.g. https://example.com  or  a file path' :
+                                    'e.g. /usr/bin/code  or  flatpak run com.X'
+          }
+          value={target ?? ''}
+          onChange={e => onChange({ target: e.target.value })}
+        />
+        <button className="browse-btn" onClick={browseFile} title="Browse for application">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+            <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
+          </svg>
+        </button>
+      </div>
+      <div className="open-app-modes">
+        {[
+          { value: 'gtk-launch', label: 'App ID',     hint: 'Recommended — works for Flatpak & native' },
+          { value: 'xdg-open',   label: 'xdg-open',   hint: 'Open files / URLs with default handler' },
+          { value: 'direct',     label: 'Command',     hint: 'Run a binary or shell command directly' },
+        ].map(opt => (
+          <label key={opt.value} className={`open-app-mode-option${mode === opt.value ? ' active' : ''}`}>
+            <input
+              type="radio"
+              name="open-app-mode"
+              value={opt.value}
+              checked={mode === opt.value}
+              onChange={() => onChange({ mode: opt.value })}
+            />
+            <span className="open-app-mode-label">{opt.label}</span>
+            {mode === opt.value && <span className="open-app-mode-hint">{opt.hint}</span>}
+          </label>
+        ))}
+      </div>
+    </div>
+  )
 }
+
+// ─── Action Picker ───────────────────────────────────────────
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app'])
 
 function ActionSection({ action, onChange }) {
   const [picking, setPicking] = useState(false)
 
+  // ── assigned: hotkey ──
   if (action?.type === 'hotkey') {
     return (
       <div className="assigned-action">
@@ -278,6 +327,32 @@ function ActionSection({ action, onChange }) {
     )
   }
 
+  // ── assigned: open-app ──
+  if (action?.type === 'open-app') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <rect x="2" y="3" width="12" height="10" rx="1.5" />
+            <path d="M5 7l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Open Application</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <OpenAppEditor
+          target={action.target ?? ''}
+          mode={action.mode ?? 'xdg-open'}
+          onChange={updates => onChange({ action: { type: 'open-app', ...action, ...updates } })}
+        />
+      </div>
+    )
+  }
+
+  // ── unassigned ──
   return (
     <div className="unassigned-action">
       {picking ? (
@@ -285,16 +360,19 @@ function ActionSection({ action, onChange }) {
           {ACTION_CATEGORIES.flatMap(cat => cat.actions).map(a => (
             <button
               key={a.id}
-              className={`action-type-item${a.id !== 'hotkey' ? ' disabled' : ''}`}
+              className={`action-type-item${!ENABLED_ACTIONS.has(a.id) ? ' disabled' : ''}`}
               onClick={() => {
-                if (a.id !== 'hotkey') return
-                onChange({ action: { type: 'hotkey', keys: '' } })
+                if (!ENABLED_ACTIONS.has(a.id)) return
+                const defaults = a.id === 'hotkey'
+                  ? { type: 'hotkey', keys: '' }
+                  : { type: 'open-app', target: '', mode: 'gtk-launch' }
+                onChange({ action: defaults })
                 setPicking(false)
               }}
             >
               <span className="action-type-icon">{a.icon}</span>
               <span>{a.name}</span>
-              {a.id !== 'hotkey' && <span className="action-type-soon">soon</span>}
+              {!ENABLED_ACTIONS.has(a.id) && <span className="action-type-soon">soon</span>}
             </button>
           ))}
         </div>
@@ -536,24 +614,27 @@ export default function App() {
 
   useEffect(() => {
     if (!window.streamDeck) return
-    window.streamDeck.onInfo(info => {
+    const offInfo  = window.streamDeck.onInfo(info => {
       setDevice(info)
       if (info.iconSize) setIconSize(info.iconSize)
     })
-    window.streamDeck.onKeyDown(({ index }) => {
+    const offDown = window.streamDeck.onKeyDown(({ index }) => {
       setPressedKey(index)
       const action = buttonConfigsRef.current[index]?.action
       if (action?.type === 'hotkey' && action.keys) {
         window.streamDeck.executeHotkey(action.keys)
+      } else if (action?.type === 'open-app' && action.target) {
+        window.streamDeck.openApplication(action.target, action.mode ?? 'gtk-launch')
       }
     })
-    window.streamDeck.onKeyUp(({ index }) => {
+    const offUp = window.streamDeck.onKeyUp(({ index }) => {
       setPressedKey(p => p === index ? null : p)
       // Redraw the hardware button to restore the user's icon after the press-flash
       drawHardwareButton(index, buttonConfigsRef.current[index])
     })
-    window.streamDeck.onSleep(() => setSleeping(true))
-    window.streamDeck.onWake(()  => setSleeping(false))
+    const offSleep = window.streamDeck.onSleep(() => setSleeping(true))
+    const offWake  = window.streamDeck.onWake(()  => setSleeping(false))
+    return () => { offInfo(); offDown(); offUp(); offSleep(); offWake() }
   }, [])
 
   const rows        = device?.rows ?? 3
