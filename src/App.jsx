@@ -12,6 +12,37 @@ const DEVICE_MODEL_NAMES = {
   pedal:      'Stream Deck Pedal',
 }
 
+// ─── Folder navigation helpers (pure, module-level) ─────────
+// Return the buttons object at the given folder path within pages
+function getButtonsAt(pages, pageIndex, folderPath) {
+  let buttons = pages[pageIndex] ?? {}
+  for (const idx of folderPath) {
+    buttons = buttons[idx]?.action?.buttons ?? {}
+  }
+  return buttons
+}
+
+// Deep-immutable update of a single button inside pages.
+// config === null removes the button; otherwise it sets it.
+function immutableSetButton(pages, pageIndex, folderPath, buttonIndex, config) {
+  const newPages = [...pages]
+  function update(buttons, path) {
+    if (path.length === 0) {
+      if (config === null) {
+        const { [buttonIndex]: _gone, ...rest } = buttons
+        return rest
+      }
+      return { ...buttons, [buttonIndex]: config }
+    }
+    const [head, ...tail] = path
+    const btn = buttons[head] ?? {}
+    const inner = update(btn.action?.buttons ?? {}, tail)
+    return { ...buttons, [head]: { ...btn, action: { ...btn.action, type: 'folder', buttons: inner } } }
+  }
+  newPages[pageIndex] = update(newPages[pageIndex] ?? {}, folderPath)
+  return newPages
+}
+
 const ACTION_CATEGORIES = [
   {
     id: 'streamdeck',
@@ -240,7 +271,8 @@ function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonCo
               selectedKey  === i ? 'selected'  : '',
               pressedKey   === i ? 'pressed'   : '',
               dragOverIndex === i ? 'drag-over' : '',
-              cfg?.iconDataUrl    ? 'has-icon'  : '',
+              cfg?.iconDataUrl              ? 'has-icon'  : '',
+              cfg?.action?.type === 'folder' ? 'is-folder'  : '',
             ].join(' ').trim()}
             style={{
               backgroundImage: cfg?.iconDataUrl ? `url(${cfg.iconDataUrl})` : 'none',
@@ -642,7 +674,7 @@ function MultiActionEditor({ actions, onChange }) {
 }
 
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile', 'page-switcher'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile', 'page-switcher', 'create-folder', 'back-folder'])
 
 // Sub-action types available inside a Multi Action (no nesting)
 const SUB_ACTION_TYPES = [
@@ -673,6 +705,8 @@ const ACTION_DEFAULTS = {
   'multi-action':   { type: 'multi-action',   actions: [] },
   'switch-profile': { type: 'switch-profile', profileName: '' },
   'page-switcher':  { type: 'page-switcher',  targetPage: 0 },
+  'create-folder':  { type: 'folder',          buttons: {} },
+  'back-folder':    { type: 'back-folder' },
 }
 
 // Dispatches a single leaf action — returns a Promise
@@ -687,10 +721,56 @@ function dispatchSubAction(sd, act) {
   return Promise.resolve()
 }
 
-function ActionSection({ action, onChange, profiles = [], pageCount = 1 }) {
+function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder }) {
   const [picking, setPicking] = useState(false)
 
-  // ── assigned: sleep-toggle ──
+  // ── assigned: folder ──
+  if (action?.type === 'folder') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 20 16" fill="currentColor" width="13" height="11">
+            <path d="M8.5 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H10.5L8.5 0z" />
+          </svg>
+          <span>Folder</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <p className="action-hint">Press the button on hardware to enter the folder. In the editor, use the button below or click the button in the grid.</p>
+        {onEnterFolder && (
+          <button className="enter-folder-btn" onClick={onEnterFolder}>
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" width="12" height="12">
+              <path d="M1 7h10M7 3l4 4-4 4" strokeLinecap="round" />
+            </svg>
+            Open Folder
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // ── assigned: back-folder ──
+  if (action?.type === 'back-folder') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" width="13" height="13">
+            <path d="M9 2L3 6l6 4" />
+          </svg>
+          <span>Back</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <p className="action-hint">Returns to the parent folder or page when pressed.</p>
+      </div>
+    )
+  }
   if (action?.type === 'sleep-toggle') {
     return (
       <div className="assigned-action">
@@ -927,6 +1007,10 @@ function ActionSection({ action, onChange, profiles = [], pageCount = 1 }) {
                   ? { type: 'switch-profile', profileName: '' }
                   : a.id === 'page-switcher'
                   ? { type: 'page-switcher', targetPage: 0 }
+                  : a.id === 'create-folder'
+                  ? { type: 'folder', buttons: {} }
+                  : a.id === 'back-folder'
+                  ? { type: 'back-folder' }
                   : { type: 'open-app', target: '', mode: 'gtk-launch' }
                 onChange({ action: defaults })
                 setPicking(false)
@@ -951,7 +1035,7 @@ function ActionSection({ action, onChange, profiles = [], pageCount = 1 }) {
   )
 }
 
-function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount }) {
+function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder }) {
   const fileInputRef = useRef(null)
   const [showLibrary, setShowLibrary] = useState(false)
 
@@ -982,7 +1066,7 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
       <div className="properties-body">
         <div className="prop-section">
           <span className="prop-label">Action</span>
-          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} />
+          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} onEnterFolder={onEnterFolder} />
         </div>
 
         <div className="prop-section">
@@ -1131,24 +1215,27 @@ export default function App() {
   const [sleeping,      setSleeping]      = useState(false)
   const [pages,         setPages]         = useState([{}])   // array of page button-config objects
   const [currentPage,   setCurrentPage]   = useState(0)
+  const [folderPath,    setFolderPath]    = useState([])     // indices into nested folders
   const [iconSize,      setIconSize]      = useState(72)
   const [contextMenu,   setContextMenu]   = useState(null)
   const [clipboard,     setClipboard]     = useState(null)
   const [activeProfile, setActiveProfile] = useState('Default Profile')
   const [profiles,      setProfiles]      = useState(['Default Profile'])
 
-  // Current page's button configs (derived)
-  const buttonConfigs = pages[currentPage] ?? {}
+  // Visible button configs — current page at current folder depth (derived)
+  const buttonConfigs = getButtonsAt(pages, currentPage, folderPath)
 
   // Keep refs so event handlers registered once always see latest values
   const buttonConfigsRef = useRef({})
   const pagesRef         = useRef([{}])
   const currentPageRef   = useRef(0)
+  const folderPathRef    = useRef([])
   const deviceRef        = useRef(null)
-  useEffect(() => { buttonConfigsRef.current = pages[currentPage] ?? {} }, [pages, currentPage])
-  useEffect(() => { pagesRef.current = pages }, [pages])
-  useEffect(() => { currentPageRef.current = currentPage }, [currentPage])
-  useEffect(() => { deviceRef.current = device }, [device])
+  useEffect(() => { buttonConfigsRef.current = buttonConfigs },          [buttonConfigs])
+  useEffect(() => { pagesRef.current = pages },                          [pages])
+  useEffect(() => { currentPageRef.current = currentPage },              [currentPage])
+  useEffect(() => { folderPathRef.current = folderPath },                [folderPath])
+  useEffect(() => { deviceRef.current = device },                        [device])
 
   // Composite icon + title on canvas → send RGBA to hardware
   const drawHardwareButton = async (index, config) => {
@@ -1203,6 +1290,8 @@ export default function App() {
     setActiveProfile(name)
     setPages(loadedPages)
     setCurrentPage(0)
+    setFolderPath([])
+    setSelectedKey(null)
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
     const total = rows * cols
@@ -1219,6 +1308,8 @@ export default function App() {
     const pg = pagesRef.current
     if (pageIndex < 0 || pageIndex >= pg.length) return
     setCurrentPage(pageIndex)
+    setFolderPath([])
+    setSelectedKey(null)
     const newPage = pg[pageIndex] ?? {}
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
@@ -1228,9 +1319,11 @@ export default function App() {
   switchToPageRef.current = switchToPage
 
   const addPage = () => {
-    const newIndex = pagesRef.current.length  // new page goes at this index
+    const newIndex = pagesRef.current.length
     setPages(prev => [...prev, {}])
     setCurrentPage(newIndex)
+    setFolderPath([])
+    setSelectedKey(null)
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
     for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, undefined)
@@ -1244,31 +1337,52 @@ export default function App() {
     const newPage        = newPages[newCurrentPage] ?? {}
     setPages(newPages)
     setCurrentPage(newCurrentPage)
+    setFolderPath([])
+    setSelectedKey(null)
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
     for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newPage[i])
   }
   // ─────────────────────────────────────────────────────────────
 
+  // ── Folder enter / exit ─────────────────────────────────────
+  const enterFolder = (buttonIndex) => {
+    const newPath     = [...folderPathRef.current, buttonIndex]
+    const newButtons  = getButtonsAt(pagesRef.current, currentPageRef.current, newPath)
+    setFolderPath(newPath)
+    setSelectedKey(null)
+    const rows  = deviceRef.current?.rows ?? 3
+    const cols  = deviceRef.current?.cols ?? 5
+    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newButtons[i])
+  }
+  const enterFolderRef = useRef(null)
+  enterFolderRef.current = enterFolder
+
+  const exitFolder = () => {
+    const newPath    = folderPathRef.current.slice(0, -1)
+    const newButtons = getButtonsAt(pagesRef.current, currentPageRef.current, newPath)
+    setFolderPath(newPath)
+    setSelectedKey(null)
+    const rows  = deviceRef.current?.rows ?? 3
+    const cols  = deviceRef.current?.cols ?? 5
+    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newButtons[i])
+  }
+  const exitFolderRef = useRef(null)
+  exitFolderRef.current = exitFolder
+  // ─────────────────────────────────────────────────────────────
+
   const updateConfig = (index, updates) => {
     setPages(prev => {
-      const page = prev[currentPage] ?? {}
-      const next = { title: '', iconDataUrl: null, bgColor: '#262626', ...page[index], ...updates }
+      const currentButtons = getButtonsAt(prev, currentPage, folderPath)
+      const next = { title: '', iconDataUrl: null, bgColor: '#262626', ...currentButtons[index], ...updates }
       drawHardwareButton(index, next)
-      const newPages = [...prev]
-      newPages[currentPage] = { ...page, [index]: next }
-      return newPages
+      return immutableSetButton(prev, currentPage, folderPath, index, next)
     })
   }
 
   const clearButton = (index) => {
     drawHardwareButton(index, null)
-    setPages(prev => {
-      const newPages = [...prev]
-      const { [index]: _gone, ...rest } = newPages[currentPage] ?? {}
-      newPages[currentPage] = rest
-      return newPages
-    })
+    setPages(prev => immutableSetButton(prev, currentPage, folderPath, index, null))
     setContextMenu(null)
   }
 
@@ -1330,6 +1444,10 @@ export default function App() {
         })
       } else if (action?.type === 'page-switcher') {
         switchToPageRef.current(action.targetPage ?? 0)
+      } else if (action?.type === 'folder') {
+        enterFolderRef.current(index)
+      } else if (action?.type === 'back-folder') {
+        exitFolderRef.current()
       } else if (action?.type === 'multi-action' && action.actions?.length) {
         const sd = window.streamDeck
         ;(async () => {
@@ -1427,6 +1545,28 @@ export default function App() {
         <main className="device-area">
           {device ? (
             <>
+              {folderPath.length > 0 && (
+                <div className="folder-nav">
+                  <button className="folder-nav-back" onClick={exitFolder} aria-label="Exit folder">
+                    <svg viewBox="0 0 6 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" width="6" height="10">
+                      <path d="M5 1L1 5l4 4" />
+                    </svg>
+                    Back
+                  </button>
+                  <div className="folder-nav-path">
+                    {folderPath.map((idx, depth) => {
+                      const ancestorButtons = getButtonsAt(pages, currentPage, folderPath.slice(0, depth))
+                      const label = ancestorButtons[idx]?.title || `Folder`
+                      return (
+                        <span key={depth} className="folder-nav-crumb">
+                          {depth > 0 && <span className="folder-nav-sep">›</span>}
+                          <span>{label}</span>
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
               <div className={`device-frame${sleeping ? ' sleeping' : ''}`}>
                 {sleeping && (
                   <div className="sleep-overlay">
@@ -1453,6 +1593,7 @@ export default function App() {
                 />
               </div>
 
+              {folderPath.length === 0 && (
               <div className="page-controls">
                 <button
                   className="page-btn"
@@ -1498,6 +1639,7 @@ export default function App() {
                   </button>
                 )}
               </div>
+              )}
             </>
           ) : (
             <div className="no-device">
@@ -1524,6 +1666,7 @@ export default function App() {
             iconSize={iconSize}
             profiles={profiles}
             pageCount={pages.length}
+            onEnterFolder={() => { enterFolder(selectedKey); setSelectedKey(null) }}
           />
         )}
       </div>
