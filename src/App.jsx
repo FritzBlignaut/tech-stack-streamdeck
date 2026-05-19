@@ -1023,7 +1023,7 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
 }
 
 // ─── Context Menu ───────────────────────────────────────────
-function ContextMenu({ x, y, keyIndex, onClear, onClose }) {
+function ContextMenu({ x, y, keyIndex, onClear, onCopy, onPaste, hasClipboard, hasContent, onClose }) {
   const closeRef = useRef(onClose)
   closeRef.current = onClose
 
@@ -1054,11 +1054,34 @@ function ContextMenu({ x, y, keyIndex, onClear, onClose }) {
       onClick={e => e.stopPropagation()}
       onContextMenu={e => e.preventDefault()}
     >
-      <button className="context-menu-item danger" onClick={() => onClear(keyIndex)}>
+      <button
+        className="context-menu-item"
+        disabled={!hasContent}
+        onClick={() => { onCopy(keyIndex); onClose() }}
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+          <rect x="5" y="5" width="8" height="9" rx="1.5" />
+          <path d="M3 11V3a1 1 0 0 1 1-1h8" strokeLinecap="round" />
+        </svg>
+        Copy
+      </button>
+      <button
+        className="context-menu-item"
+        disabled={!hasClipboard}
+        onClick={() => { onPaste(keyIndex); onClose() }}
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+          <rect x="3" y="5" width="10" height="9" rx="1.5" />
+          <path d="M6 5V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1" strokeLinecap="round" />
+        </svg>
+        Paste
+      </button>
+      <div className="context-menu-divider" />
+      <button className="context-menu-item danger" onClick={() => { onClear(keyIndex); onClose() }}>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
           <path d="M3 4h10M6 4V2h4v2M5 4l.5 9h5L11 4" />
         </svg>
-        Clear button
+        Clear
       </button>
     </div>
   )
@@ -1073,6 +1096,7 @@ export default function App() {
   const [buttonConfigs, setButtonConfigs] = useState({})
   const [iconSize,      setIconSize]      = useState(72)
   const [contextMenu,   setContextMenu]   = useState(null)
+  const [clipboard,     setClipboard]     = useState(null)
   const [activeProfile, setActiveProfile] = useState('Default Profile')
   const [profiles,      setProfiles]      = useState(['Default Profile'])
 
@@ -1381,6 +1405,16 @@ export default function App() {
           x={contextMenu.x}
           y={contextMenu.y}
           keyIndex={contextMenu.keyIndex}
+          hasContent={!!buttonConfigs[contextMenu.keyIndex] &&
+            !!(buttonConfigs[contextMenu.keyIndex].title ||
+               buttonConfigs[contextMenu.keyIndex].iconDataUrl ||
+               buttonConfigs[contextMenu.keyIndex].action)}
+          hasClipboard={!!clipboard}
+          onCopy={i => setClipboard({ ...buttonConfigs[i] })}
+          onPaste={i => {
+            if (!clipboard) return
+            updateConfig(i, { ...clipboard })
+          }}
           onClear={clearButton}
           onClose={() => setContextMenu(null)}
         />
