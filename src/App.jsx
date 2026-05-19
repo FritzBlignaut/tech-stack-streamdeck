@@ -382,6 +382,27 @@ export default function App() {
     setContextMenu(null)
   }
 
+  // Load saved profile once on startup and redraw all hardware buttons
+  useEffect(() => {
+    if (!window.streamDeck?.loadProfile) return
+    window.streamDeck.loadProfile().then(saved => {
+      if (!saved?.buttons) return
+      setButtonConfigs(saved.buttons)
+      Object.entries(saved.buttons).forEach(([idx, cfg]) => {
+        drawHardwareButton(Number(idx), cfg)
+      })
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save whenever buttonConfigs changes (debounced 500ms)
+  useEffect(() => {
+    if (!window.streamDeck?.saveProfile) return
+    const timer = setTimeout(() => {
+      window.streamDeck.saveProfile({ name: 'Default Profile', buttons: buttonConfigs })
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [buttonConfigs])
+
   useEffect(() => {
     if (!window.streamDeck) return
     window.streamDeck.onInfo(info => {
