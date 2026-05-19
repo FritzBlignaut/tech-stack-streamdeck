@@ -548,6 +548,26 @@
   cursor: default;
 }
 
+.page-add-btn {
+  color: #555;
+  width: 26px;
+  height: 26px;
+}
+.page-add-btn:hover {
+  color: #5a9cf5 !important;
+  background: rgba(90,156,245,0.1) !important;
+}
+
+.page-remove-btn {
+  color: #555;
+  width: 26px;
+  height: 26px;
+}
+.page-remove-btn:hover {
+  color: #e05555 !important;
+  background: rgba(220,80,80,0.1) !important;
+}
+
 .page-indicator {
   font-size: 12px;
   color: #444;

@@ -19,6 +19,7 @@ const ACTION_CATEGORIES = [
     actions: [
       { id: 'sleep-toggle',   name: 'Sleep',           icon: '☽' },
       { id: 'switch-profile', name: 'Switch Profile',  icon: '⇄' },
+      { id: 'page-switcher',  name: 'Page',            icon: '⊞' },
       { id: 'back-folder',    name: 'Back to Folder',  icon: '↩' },
       { id: 'create-folder',  name: 'Create Folder',   icon: '▣' },
     ],
@@ -641,7 +642,7 @@ function MultiActionEditor({ actions, onChange }) {
 }
 
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile', 'page-switcher'])
 
 // Sub-action types available inside a Multi Action (no nesting)
 const SUB_ACTION_TYPES = [
@@ -671,6 +672,7 @@ const ACTION_DEFAULTS = {
   'sleep-toggle':   { type: 'sleep-toggle' },
   'multi-action':   { type: 'multi-action',   actions: [] },
   'switch-profile': { type: 'switch-profile', profileName: '' },
+  'page-switcher':  { type: 'page-switcher',  targetPage: 0 },
 }
 
 // Dispatches a single leaf action — returns a Promise
@@ -685,7 +687,7 @@ function dispatchSubAction(sd, act) {
   return Promise.resolve()
 }
 
-function ActionSection({ action, onChange, profiles = [] }) {
+function ActionSection({ action, onChange, profiles = [], pageCount = 1 }) {
   const [picking, setPicking] = useState(false)
 
   // ── assigned: sleep-toggle ──
@@ -813,6 +815,38 @@ function ActionSection({ action, onChange, profiles = [] }) {
     )
   }
 
+  // ── assigned: page-switcher ──
+  if (action?.type === 'page-switcher') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <rect x="2" y="2" width="5" height="5" rx="1" />
+            <rect x="9" y="2" width="5" height="5" rx="1" />
+            <rect x="2" y="9" width="5" height="5" rx="1" />
+            <rect x="9" y="9" width="5" height="5" rx="1" />
+          </svg>
+          <span>Page Switcher</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <span className="prop-label-sm">Target page</span>
+        <select
+          className="prop-input"
+          value={action.targetPage ?? 0}
+          onChange={e => onChange({ action: { type: 'page-switcher', targetPage: Number(e.target.value) } })}
+        >
+          {Array.from({ length: pageCount }, (_, i) => (
+            <option key={i} value={i}>Page {i + 1}</option>
+          ))}
+        </select>
+      </div>
+    )
+  }
+
   // ── assigned: switch-profile ──
   if (action?.type === 'switch-profile') {
     return (
@@ -891,6 +925,8 @@ function ActionSection({ action, onChange, profiles = [] }) {
                   ? { type: 'multi-action', actions: [] }
                   : a.id === 'switch-profile'
                   ? { type: 'switch-profile', profileName: '' }
+                  : a.id === 'page-switcher'
+                  ? { type: 'page-switcher', targetPage: 0 }
                   : { type: 'open-app', target: '', mode: 'gtk-launch' }
                 onChange({ action: defaults })
                 setPicking(false)
@@ -915,7 +951,7 @@ function ActionSection({ action, onChange, profiles = [] }) {
   )
 }
 
-function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles }) {
+function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount }) {
   const fileInputRef = useRef(null)
   const [showLibrary, setShowLibrary] = useState(false)
 
@@ -946,7 +982,7 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
       <div className="properties-body">
         <div className="prop-section">
           <span className="prop-label">Action</span>
-          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} />
+          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} />
         </div>
 
         <div className="prop-section">
@@ -1093,17 +1129,25 @@ export default function App() {
   const [selectedKey,   setSelectedKey]   = useState(null)
   const [pressedKey,    setPressedKey]    = useState(null)
   const [sleeping,      setSleeping]      = useState(false)
-  const [buttonConfigs, setButtonConfigs] = useState({})
+  const [pages,         setPages]         = useState([{}])   // array of page button-config objects
+  const [currentPage,   setCurrentPage]   = useState(0)
   const [iconSize,      setIconSize]      = useState(72)
   const [contextMenu,   setContextMenu]   = useState(null)
   const [clipboard,     setClipboard]     = useState(null)
   const [activeProfile, setActiveProfile] = useState('Default Profile')
   const [profiles,      setProfiles]      = useState(['Default Profile'])
 
+  // Current page's button configs (derived)
+  const buttonConfigs = pages[currentPage] ?? {}
+
   // Keep refs so event handlers registered once always see latest values
   const buttonConfigsRef = useRef({})
+  const pagesRef         = useRef([{}])
+  const currentPageRef   = useRef(0)
   const deviceRef        = useRef(null)
-  useEffect(() => { buttonConfigsRef.current = buttonConfigs }, [buttonConfigs])
+  useEffect(() => { buttonConfigsRef.current = pages[currentPage] ?? {} }, [pages, currentPage])
+  useEffect(() => { pagesRef.current = pages }, [pages])
+  useEffect(() => { currentPageRef.current = currentPage }, [currentPage])
   useEffect(() => { deviceRef.current = device }, [device])
 
   // Composite icon + title on canvas → send RGBA to hardware
@@ -1153,32 +1197,78 @@ export default function App() {
   const loadProfileData = async (name) => {
     const result = await window.streamDeck?.switchProfile(name)
     if (!result?.ok) return false
-    const buttons = result.data?.buttons ?? {}
+    const data        = result.data
+    const loadedPages = data?.pages ?? (data?.buttons ? [data.buttons] : [{}])
+    const page0       = loadedPages[0] ?? {}
     setActiveProfile(name)
-    setButtonConfigs(buttons)
+    setPages(loadedPages)
+    setCurrentPage(0)
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
     const total = rows * cols
     for (let i = 0; i < total; i++) {
-      drawHardwareButtonRef.current(i, buttons[i])
+      drawHardwareButtonRef.current(i, page0[i])
     }
     return true
   }
   const loadProfileDataRef = useRef(null)
   loadProfileDataRef.current = loadProfileData
 
+  // ── Page navigation helpers ──────────────────────────────────
+  const switchToPage = (pageIndex) => {
+    const pg = pagesRef.current
+    if (pageIndex < 0 || pageIndex >= pg.length) return
+    setCurrentPage(pageIndex)
+    const newPage = pg[pageIndex] ?? {}
+    const rows  = deviceRef.current?.rows ?? 3
+    const cols  = deviceRef.current?.cols ?? 5
+    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newPage[i])
+  }
+  const switchToPageRef = useRef(null)
+  switchToPageRef.current = switchToPage
+
+  const addPage = () => {
+    const newIndex = pagesRef.current.length  // new page goes at this index
+    setPages(prev => [...prev, {}])
+    setCurrentPage(newIndex)
+    const rows  = deviceRef.current?.rows ?? 3
+    const cols  = deviceRef.current?.cols ?? 5
+    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, undefined)
+  }
+
+  const removePage = (pageIndex) => {
+    const pg = pagesRef.current
+    if (pg.length <= 1) return
+    const newPages       = pg.filter((_, i) => i !== pageIndex)
+    const newCurrentPage = Math.min(currentPageRef.current, newPages.length - 1)
+    const newPage        = newPages[newCurrentPage] ?? {}
+    setPages(newPages)
+    setCurrentPage(newCurrentPage)
+    const rows  = deviceRef.current?.rows ?? 3
+    const cols  = deviceRef.current?.cols ?? 5
+    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newPage[i])
+  }
+  // ─────────────────────────────────────────────────────────────
+
   const updateConfig = (index, updates) => {
-    setButtonConfigs(prev => {
-      const next = { title: '', iconDataUrl: null, bgColor: '#262626', ...prev[index], ...updates }
+    setPages(prev => {
+      const page = prev[currentPage] ?? {}
+      const next = { title: '', iconDataUrl: null, bgColor: '#262626', ...page[index], ...updates }
       drawHardwareButton(index, next)
-      return { ...prev, [index]: next }
+      const newPages = [...prev]
+      newPages[currentPage] = { ...page, [index]: next }
+      return newPages
     })
   }
 
   const clearButton = (index) => {
-    const next = { title: '', iconDataUrl: null, bgColor: '#262626' }
-    drawHardwareButton(index, next)
-    setButtonConfigs(prev => ({ ...prev, [index]: next }))
+    drawHardwareButton(index, null)
+    setPages(prev => {
+      const newPages = [...prev]
+      const { [index]: _gone, ...rest } = newPages[currentPage] ?? {}
+      newPages[currentPage] = rest
+      return newPages
+    })
     setContextMenu(null)
   }
 
@@ -1192,23 +1282,25 @@ export default function App() {
     ]).then(([list, activeName, saved]) => {
       if (list?.length) setProfiles(list)
       if (activeName)   setActiveProfile(activeName)
-      if (saved?.buttons) {
-        setButtonConfigs(saved.buttons)
-        Object.entries(saved.buttons).forEach(([idx, cfg]) => {
+      if (saved) {
+        const loadedPages = saved.pages ?? (saved.buttons ? [saved.buttons] : [{}])
+        setPages(loadedPages)
+        const page0 = loadedPages[0] ?? {}
+        Object.entries(page0).forEach(([idx, cfg]) => {
           drawHardwareButtonRef.current(Number(idx), cfg)
         })
       }
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-save whenever buttonConfigs changes (debounced 500ms)
+  // Auto-save whenever pages/profile change (debounced 500ms)
   useEffect(() => {
     if (!window.streamDeck?.saveProfile) return
     const timer = setTimeout(() => {
-      window.streamDeck.saveProfile({ name: activeProfile, buttons: buttonConfigs })
+      window.streamDeck.saveProfile({ name: activeProfile, pages })
     }, 500)
     return () => clearTimeout(timer)
-  }, [buttonConfigs, activeProfile])
+  }, [pages, activeProfile])
 
   useEffect(() => {
     if (!window.streamDeck) return
@@ -1236,6 +1328,8 @@ export default function App() {
             window.streamDeck.listProfiles?.().then(list => { if (list?.length) setProfiles(list) })
           }
         })
+      } else if (action?.type === 'page-switcher') {
+        switchToPageRef.current(action.targetPage ?? 0)
       } else if (action?.type === 'multi-action' && action.actions?.length) {
         const sd = window.streamDeck
         ;(async () => {
@@ -1285,7 +1379,8 @@ export default function App() {
               if (result?.ok) {
                 setProfiles(prev => [...prev, result.name].sort((a, b) => a.localeCompare(b)))
                 setActiveProfile(result.name)
-                setButtonConfigs({})
+                setPages([{}])
+                setCurrentPage(0)
                 const rows  = deviceRef.current?.rows ?? 3
                 const cols  = deviceRef.current?.cols ?? 5
                 for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, undefined)
@@ -1359,17 +1454,49 @@ export default function App() {
               </div>
 
               <div className="page-controls">
-                <button className="page-btn" disabled aria-label="Previous page">
+                <button
+                  className="page-btn"
+                  disabled={currentPage === 0}
+                  onClick={() => switchToPage(currentPage - 1)}
+                  aria-label="Previous page"
+                >
                   <svg viewBox="0 0 6 10" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <path d="M5 1L1 5l4 4" />
                   </svg>
                 </button>
-                <span className="page-indicator">Page 1 / 1</span>
-                <button className="page-btn" disabled aria-label="Next page">
+                <span className="page-indicator">Page {currentPage + 1} / {pages.length}</span>
+                <button
+                  className="page-btn"
+                  disabled={currentPage === pages.length - 1}
+                  onClick={() => switchToPage(currentPage + 1)}
+                  aria-label="Next page"
+                >
                   <svg viewBox="0 0 6 10" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <path d="M1 1l4 4-4 4" />
                   </svg>
                 </button>
+                <button
+                  className="page-btn page-add-btn"
+                  onClick={addPage}
+                  title="Add page"
+                  aria-label="Add page"
+                >
+                  <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" width="10" height="10">
+                    <path d="M5 1v8M1 5h8" strokeLinecap="round" />
+                  </svg>
+                </button>
+                {pages.length > 1 && (
+                  <button
+                    className="page-btn page-remove-btn"
+                    onClick={() => removePage(currentPage)}
+                    title="Remove current page"
+                    aria-label="Remove page"
+                  >
+                    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" width="10" height="10">
+                      <path d="M1 5h8" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </>
           ) : (
@@ -1396,6 +1523,7 @@ export default function App() {
             onChange={updates => updateConfig(selectedKey, updates)}
             iconSize={iconSize}
             profiles={profiles}
+            pageCount={pages.length}
           />
         )}
       </div>
