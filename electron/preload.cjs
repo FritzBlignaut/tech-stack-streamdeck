@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('streamDeck', {
   loadProfile:    ()            => ipcRenderer.invoke('profile:load'),
   executeHotkey:    (keys)          => ipcRenderer.invoke('action:hotkey',        { keys }),
   openApplication:  (target, mode)  => ipcRenderer.invoke('action:open-app',      { target, mode }),
+  openUrl:          (url)           => ipcRenderer.invoke('action:open-url',       { url }),
   sleepToggle:      ()              => ipcRenderer.invoke('action:sleep-toggle'),
   browseForFile:    ()              => ipcRenderer.invoke('dialog:open-file'),
   browseIconDir:    ()              => ipcRenderer.invoke('icons:browse-dir'),

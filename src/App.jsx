@@ -425,7 +425,7 @@ function OpenAppEditor({ target, mode, onChange }) {
 }
 
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'sleep-toggle'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'sleep-toggle'])
 
 function ActionSection({ action, onChange }) {
   const [picking, setPicking] = useState(false)
@@ -446,6 +446,33 @@ function ActionSection({ action, onChange }) {
           </button>
         </div>
         <p className="action-hint">Puts the deck to sleep. Any button press wakes it.</p>
+      </div>
+    )
+  }
+
+  // ── assigned: open-url ──
+  if (action?.type === 'open-url') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <circle cx="8" cy="8" r="6" />
+            <path d="M2 8h12M8 2c-2 2-3 4-3 6s1 4 3 6M8 2c2 2 3 4 3 6s-1 4-3 6" />
+          </svg>
+          <span>Open URL</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <input
+          className="prop-input"
+          type="url"
+          placeholder="https://example.com"
+          value={action.url ?? ''}
+          onChange={e => onChange({ action: { type: 'open-url', url: e.target.value } })}
+        />
       </div>
     )
   }
@@ -514,6 +541,8 @@ function ActionSection({ action, onChange }) {
                   ? { type: 'hotkey', keys: '' }
                   : a.id === 'sleep-toggle'
                   ? { type: 'sleep-toggle' }
+                  : a.id === 'open-url'
+                  ? { type: 'open-url', url: '' }
                   : { type: 'open-app', target: '', mode: 'gtk-launch' }
                 onChange({ action: defaults })
                 setPicking(false)
@@ -789,6 +818,8 @@ export default function App() {
         window.streamDeck.executeHotkey(action.keys)
       } else if (action?.type === 'open-app' && action.target) {
         window.streamDeck.openApplication(action.target, action.mode ?? 'gtk-launch')
+      } else if (action?.type === 'open-url' && action.url) {
+        window.streamDeck.openUrl(action.url)
       } else if (action?.type === 'sleep-toggle') {
         window.streamDeck.sleepToggle()
       }
