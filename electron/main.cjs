@@ -1,11 +1,36 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
 const path   = require('path')
 const fs     = require('fs')
 const { spawn } = require('child_process')
 
 let mainWindow
+let libraryDir = null
+
+// Recursively walk a directory and collect image file paths
+function scanDir(dirPath, maxFiles = 5000) {
+  const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg'])
+  const results = []
+  function walk(dir, category) {
+    let entries
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      if (results.length >= maxFiles) return
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full, entry.name)
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase()
+        if (IMAGE_EXTS.has(ext)) {
+          results.push({ name: path.basename(entry.name, ext), category, path: full })
+        }
+      }
+    }
+  }
+  walk(dirPath, '')
+  return results
+}
 
 function sendToRenderer(channel, data) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -93,24 +118,15 @@ async function initStreamDeck() {
     return buf
   }
 
-  // Restore all buttons to their awake state.
-  // Button 0 shows a green circle (sleep-toggle indicator).
-  // All other buttons go dark.
+  // Restore brightness when waking — renderer redraws icons from profile
   async function drawAwakeState() {
     await deck.setBrightness(100)
-    if (ICON_SIZE) {
-      await deck.fillKeyBuffer(0, circleBuffer(0, 200, 80), { format: 'rgb' })
-    } else {
-      await deck.fillKeyColor(0, 0, 200, 80)
-    }
-    for (let i = 1; i < buttonControls.length; i++) {
-      await deck.fillKeyColor(i, 0, 0, 0)
-    }
   }
 
-  // Draw initial test pattern — proves hardware image drawing works
+  // Start with a clean panel; renderer will draw icons once the profile loads
+  await deck.clearPanel()
   await drawAwakeState()
-  console.log('[StreamDeck] Test image drawn — button 0 (green circle) = sleep toggle')
+  console.log('[StreamDeck] Device ready')
 
   deck.on('down', async (control) => {
     if (isSleeping) {
@@ -119,16 +135,6 @@ async function initStreamDeck() {
       await drawAwakeState()
       sendToRenderer('deck:wake', {})
       console.log('[StreamDeck] Wake')
-      return
-    }
-
-    if (control.index === 0) {
-      // Button 0 = sleep toggle
-      isSleeping = true
-      await deck.clearPanel()
-      await deck.setBrightness(0)
-      sendToRenderer('deck:sleep', {})
-      console.log('[StreamDeck] Sleep')
       return
     }
 
@@ -209,6 +215,22 @@ async function initStreamDeck() {
     })
   })
 
+  // IPC: sleep / wake toggle — triggered by renderer when a sleep-toggle action fires
+  ipcMain.handle('action:sleep-toggle', async () => {
+    if (isSleeping) {
+      isSleeping = false
+      await drawAwakeState()
+      sendToRenderer('deck:wake', {})
+      console.log('[StreamDeck] Wake (action)')
+    } else {
+      isSleeping = true
+      await deck.clearPanel()
+      await deck.setBrightness(0)
+      sendToRenderer('deck:sleep', {})
+      console.log('[StreamDeck] Sleep (action)')
+    }
+  })
+
   // IPC: open native file-picker so renderer can browse for a binary
   ipcMain.handle('dialog:open-file', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -260,8 +282,63 @@ async function initStreamDeck() {
 }
 
 app.whenReady().then(async () => {
+  // Serve local icon library files via a custom protocol to avoid CORS issues in dev
+  protocol.handle('iconlib', (request) => {
+    const encoded = request.url.slice('iconlib://'.length)
+    const filePath = decodeURIComponent(encoded)
+    const resolved = path.resolve(filePath)
+    const safeBase = libraryDir ? path.resolve(libraryDir) : null
+    // Security: only serve files within the chosen library directory
+    if (!safeBase || (!resolved.startsWith(safeBase + path.sep) && resolved !== safeBase)) {
+      return new Response('Forbidden', { status: 403 })
+    }
+    const ext = path.extname(resolved).toLowerCase()
+    if (!['.png', '.jpg', '.jpeg', '.gif', '.svg'].includes(ext)) {
+      return new Response('Forbidden', { status: 403 })
+    }
+    return net.fetch('file://' + resolved)
+  })
+
   createWindow()
   await initStreamDeck()
+
+  // IPC: icon library — open folder picker
+  ipcMain.handle('icons:browse-dir', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Icon Library Folder',
+      properties: ['openDirectory'],
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  // IPC: icon library — scan folder, return [{name, category, path}]
+  ipcMain.handle('icons:scan-dir', async (_, { dirPath }) => {
+    if (!dirPath) return { error: 'No path given' }
+    const resolved = path.resolve(dirPath)
+    libraryDir = resolved
+    const icons = scanDir(resolved)
+    return { icons }
+  })
+
+  // IPC: icon library — read one icon file, return base64 dataUrl
+  ipcMain.handle('icons:load-file', async (_, { filePath }) => {
+    if (!filePath) return { error: 'No path' }
+    const resolved = path.resolve(filePath)
+    const safeBase = libraryDir ? path.resolve(libraryDir) : null
+    if (!safeBase || (!resolved.startsWith(safeBase + path.sep) && resolved !== safeBase)) {
+      return { error: 'Path not in library' }
+    }
+    const ext = path.extname(resolved).toLowerCase()
+    const ALLOWED = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg'])
+    if (!ALLOWED.has(ext)) return { error: 'Not an image' }
+    try {
+      const data = fs.readFileSync(resolved)
+      const mime = { '.svg': 'image/svg+xml', '.gif': 'image/gif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' }[ext] ?? 'image/png'
+      return { dataUrl: `data:${mime};base64,${data.toString('base64')}` }
+    } catch (err) {
+      return { error: err.message }
+    }
+  })
 })
 
 app.on('window-all-closed', () => {

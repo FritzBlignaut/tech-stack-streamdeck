@@ -17,6 +17,7 @@ const ACTION_CATEGORIES = [
     id: 'streamdeck',
     name: 'Stream Deck',
     actions: [
+      { id: 'sleep-toggle',   name: 'Sleep',           icon: '☽' },
       { id: 'switch-profile', name: 'Switch Profile',  icon: '⇄' },
       { id: 'back-folder',    name: 'Back to Folder',  icon: '↩' },
       { id: 'create-folder',  name: 'Create Folder',   icon: '▣' },
@@ -177,6 +178,132 @@ function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonCo
   )
 }
 
+// ─── Icon Library Modal ─────────────────────────────────────
+function IconLibraryModal({ onSelect, onClose }) {
+  const [icons, setIcons]           = useState([])
+  const [query, setQuery]           = useState('')
+  const [category, setCategory]     = useState('all')
+  const [loading, setLoading]       = useState(false)
+  const [libraryPath, setLibraryPath] = useState(() => localStorage.getItem('iconLibraryPath') ?? '')
+
+  useEffect(() => {
+    if (libraryPath) scan(libraryPath)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const scan = async (dirPath) => {
+    setLoading(true)
+    const result = await window.streamDeck?.scanIconDir(dirPath)
+    setLoading(false)
+    if (result?.icons) setIcons(result.icons)
+  }
+
+  const browse = async () => {
+    const dir = await window.streamDeck?.browseIconDir()
+    if (!dir) return
+    localStorage.setItem('iconLibraryPath', dir)
+    setLibraryPath(dir)
+    scan(dir)
+  }
+
+  const handleSelect = async (icon) => {
+    const result = await window.streamDeck?.loadIconFile(icon.path)
+    if (result?.dataUrl) onSelect(result.dataUrl)
+  }
+
+  const categories = ['all', ...new Set(icons.map(i => i.category).filter(Boolean))]
+  const filtered = icons.filter(icon => {
+    const q = query.toLowerCase()
+    return (!q || icon.name.toLowerCase().includes(q)) &&
+           (category === 'all' || icon.category === category)
+  })
+
+  return (
+    <div className="icon-lib-overlay" onMouseDown={onClose}>
+      <div className="icon-lib-modal" onMouseDown={e => e.stopPropagation()}>
+        <div className="icon-lib-header">
+          <div className="icon-lib-title-row">
+            <span className="icon-lib-title">Icon Library</span>
+            <button className="icon-lib-folder-btn" onClick={browse}>
+              {libraryPath ? 'Change folder' : 'Choose folder'}
+            </button>
+            <button className="icon-lib-close" onClick={onClose} aria-label="Close">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="10" height="10">
+                <path d="M1 1l10 10M11 1L1 11" />
+              </svg>
+            </button>
+          </div>
+          {icons.length > 0 && (
+            <input
+              className="icon-lib-search"
+              type="text"
+              placeholder={`Search ${icons.length} icons…`}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              autoFocus
+            />
+          )}
+          {categories.length > 1 && (
+            <div className="icon-lib-cats">
+              {categories.slice(0, 24).map(cat => (
+                <button
+                  key={cat}
+                  className={`icon-lib-cat${category === cat ? ' active' : ''}`}
+                  onClick={() => setCategory(cat)}
+                >
+                  {cat === 'all' ? 'All' : cat}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="icon-lib-body">
+          {loading && <div className="icon-lib-status">Scanning folder…</div>}
+
+          {!loading && !libraryPath && (
+            <div className="icon-lib-empty">
+              <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48" opacity="0.3">
+                <path d="M6 12A3 3 0 0 1 9 9h10l4 5h16a3 3 0 0 1 3 3v20a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V12z" />
+              </svg>
+              <p>No folder selected</p>
+              <p className="icon-lib-hint">
+                Extract an icon pack and point here to the folder.<br />
+                Works with any PNG, JPG, SVG or GIF files.
+              </p>
+              <button className="icon-lib-choose-btn" onClick={browse}>Choose folder</button>
+            </div>
+          )}
+
+          {!loading && libraryPath && icons.length === 0 && (
+            <div className="icon-lib-status">No image files found in this folder.</div>
+          )}
+
+          {!loading && filtered.length > 0 && (
+            <div className="icon-lib-grid">
+              {filtered.map((icon, i) => (
+                <button
+                  key={i}
+                  className="lib-icon-item"
+                  title={icon.name}
+                  onClick={() => handleSelect(icon)}
+                >
+                  <img
+                    loading="lazy"
+                    src={`iconlib://${encodeURIComponent(icon.path)}`}
+                    className="lib-icon-thumb"
+                    alt={icon.name}
+                    draggable={false}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Properties Panel ───────────────────────────────────────
 
 // Convert a browser KeyboardEvent to an xdotool key string, e.g. "ctrl+shift+a"
@@ -298,10 +425,30 @@ function OpenAppEditor({ target, mode, onChange }) {
 }
 
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'sleep-toggle'])
 
 function ActionSection({ action, onChange }) {
   const [picking, setPicking] = useState(false)
+
+  // ── assigned: sleep-toggle ──
+  if (action?.type === 'sleep-toggle') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <path d="M12.5 10A6 6 0 0 1 6 3.5a6 6 0 0 0 0 9 6 6 0 0 0 6.5-2.5z" />
+          </svg>
+          <span>Sleep</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <p className="action-hint">Puts the deck to sleep. Any button press wakes it.</p>
+      </div>
+    )
+  }
 
   // ── assigned: hotkey ──
   if (action?.type === 'hotkey') {
@@ -365,6 +512,8 @@ function ActionSection({ action, onChange }) {
                 if (!ENABLED_ACTIONS.has(a.id)) return
                 const defaults = a.id === 'hotkey'
                   ? { type: 'hotkey', keys: '' }
+                  : a.id === 'sleep-toggle'
+                  ? { type: 'sleep-toggle' }
                   : { type: 'open-app', target: '', mode: 'gtk-launch' }
                 onChange({ action: defaults })
                 setPicking(false)
@@ -391,6 +540,7 @@ function ActionSection({ action, onChange }) {
 
 function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize }) {
   const fileInputRef = useRef(null)
+  const [showLibrary, setShowLibrary] = useState(false)
 
   const handleIconSelect = (e) => {
     const file = e.target.files[0]
@@ -437,9 +587,17 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize }) {
               </div>
             )}
           </div>
-          {config?.iconDataUrl && (
-            <button className="icon-remove-btn" onClick={removeIcon}>Remove image</button>
-          )}
+          <div className="icon-action-row">
+            <button className="icon-lib-open-btn" onClick={() => setShowLibrary(true)}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+                <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
+              </svg>
+              Icon Library
+            </button>
+            {config?.iconDataUrl && (
+              <button className="icon-remove-btn" onClick={removeIcon}>Remove</button>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -447,6 +605,12 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize }) {
             style={{ display: 'none' }}
             onChange={handleIconSelect}
           />
+          {showLibrary && (
+            <IconLibraryModal
+              onSelect={dataUrl => { onChange({ iconDataUrl: dataUrl }); setShowLibrary(false) }}
+              onClose={() => setShowLibrary(false)}
+            />
+          )}
         </div>
 
         <div className="prop-section">
@@ -625,6 +789,8 @@ export default function App() {
         window.streamDeck.executeHotkey(action.keys)
       } else if (action?.type === 'open-app' && action.target) {
         window.streamDeck.openApplication(action.target, action.mode ?? 'gtk-launch')
+      } else if (action?.type === 'sleep-toggle') {
+        window.streamDeck.sleepToggle()
       }
     })
     const offUp = window.streamDeck.onKeyUp(({ index }) => {
@@ -636,6 +802,14 @@ export default function App() {
     const offWake  = window.streamDeck.onWake(()  => setSleeping(false))
     return () => { offInfo(); offDown(); offUp(); offSleep(); offWake() }
   }, [])
+
+  // When waking, re-draw every hardware button with the stored config
+  useEffect(() => {
+    if (sleeping) return
+    Object.entries(buttonConfigsRef.current).forEach(([idx, cfg]) => {
+      drawHardwareButton(Number(idx), cfg)
+    })
+  }, [sleeping]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows        = device?.rows ?? 3
   const cols        = device?.cols ?? 5

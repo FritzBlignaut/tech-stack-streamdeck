@@ -11,7 +11,11 @@ contextBridge.exposeInMainWorld('streamDeck', {
   setButtonIcon: (index, rgbaData) => ipcRenderer.invoke('button:setIcon', { index, rgbaData }),
   saveProfile:    (data)        => ipcRenderer.invoke('profile:save', data),
   loadProfile:    ()            => ipcRenderer.invoke('profile:load'),
-  executeHotkey:    (keys)          => ipcRenderer.invoke('action:hotkey',   { keys }),
-  openApplication:  (target, mode)  => ipcRenderer.invoke('action:open-app', { target, mode }),
+  executeHotkey:    (keys)          => ipcRenderer.invoke('action:hotkey',        { keys }),
+  openApplication:  (target, mode)  => ipcRenderer.invoke('action:open-app',      { target, mode }),
+  sleepToggle:      ()              => ipcRenderer.invoke('action:sleep-toggle'),
   browseForFile:    ()              => ipcRenderer.invoke('dialog:open-file'),
+  browseIconDir:    ()              => ipcRenderer.invoke('icons:browse-dir'),
+  scanIconDir:      (dirPath)       => ipcRenderer.invoke('icons:scan-dir',  { dirPath }),
+  loadIconFile:     (filePath)      => ipcRenderer.invoke('icons:load-file', { filePath }),
 })
