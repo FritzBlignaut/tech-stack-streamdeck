@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld('streamDeck', {
   onSleep:      (cb) => ipcRenderer.on('deck:sleep', (_, data) => cb(data)),
   onWake:       (cb) => ipcRenderer.on('deck:wake',  (_, data) => cb(data)),
   setButtonIcon: (index, rgbaData) => ipcRenderer.invoke('button:setIcon', { index, rgbaData }),
+  saveProfile:  (data)            => ipcRenderer.invoke('profile:save', data),
+  loadProfile:  ()                => ipcRenderer.invoke('profile:load'),
 })

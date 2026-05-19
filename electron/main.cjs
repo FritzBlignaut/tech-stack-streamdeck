@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
+const fs   = require('fs')
 
 let mainWindow
 
@@ -164,6 +165,24 @@ async function initStreamDeck() {
     rows,
     cols,
     iconSize: ICON_SIZE ?? 72,
+  })
+
+  // IPC: save / load profile JSON
+  const profileDir  = app.getPath('userData')
+  const profilePath = path.join(profileDir, 'Default Profile.json')
+
+  ipcMain.handle('profile:save', async (_, data) => {
+    await fs.promises.mkdir(profileDir, { recursive: true })
+    await fs.promises.writeFile(profilePath, JSON.stringify(data, null, 2), 'utf8')
+  })
+
+  ipcMain.handle('profile:load', async () => {
+    try {
+      const raw = await fs.promises.readFile(profilePath, 'utf8')
+      return JSON.parse(raw)
+    } catch {
+      return null
+    }
   })
 
   // IPC: renderer sends RGBA pixel data → draw on physical button
