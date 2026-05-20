@@ -39,4 +39,7 @@ contextBridge.exposeInMainWorld('streamDeck', {
   // Plugin 4: Media (playerctl)
   playerctlCommand: (command, player) => ipcRenderer.invoke('action:playerctl', { command, player }),
   playerctlStatus:  (player)          => ipcRenderer.invoke('playerctl:status', { player }),
+
+  // App metadata
+  getAppVersion: () => ipcRenderer.invoke('app:get-version'),
 })
