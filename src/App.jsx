@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { parseGIF, decompressFrames } from 'gifuct-js'
+import OBSWebSocket from 'obs-websocket-js'
 import './App.css'
 
 const DEVICE_MODEL_NAMES = {
@@ -126,6 +127,30 @@ function immutableSetButton(pages, pageIndex, folderPath, buttonIndex, config) {
   return newPages
 }
 
+// ── Clock format helper ────────────────────────────────────────────────────────
+// Tokens: HH=24h, hh=12h, MM=min, SS=sec, DD=day, mo=month-num, YYYY=year,
+//         ddd=weekday-short, MMM=month-short, A=AM/PM
+// Use | to split text into multiple lines on the button.
+function formatClock(date, fmt) {
+  const pad  = n => String(n).padStart(2, '0')
+  const h24  = date.getHours()
+  const h12  = h24 % 12 || 12
+  const ampm = h24 < 12 ? 'AM' : 'PM'
+  // Replace longest tokens first to prevent partial substitutions (MMM before MM)
+  const result = fmt
+    .replaceAll('YYYY', String(date.getFullYear()))
+    .replaceAll('MMM',  ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][date.getMonth()])
+    .replaceAll('ddd',  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][date.getDay()])
+    .replaceAll('HH',   pad(h24))
+    .replaceAll('hh',   pad(h12))
+    .replaceAll('MM',   pad(date.getMinutes()))
+    .replaceAll('SS',   pad(date.getSeconds()))
+    .replaceAll('DD',   pad(date.getDate()))
+    .replaceAll('mo',   pad(date.getMonth() + 1))
+    .replaceAll('A',    ampm)
+  return result.split('|').map(s => s.trim()).filter(Boolean)
+}
+
 const ACTION_CATEGORIES = [
   {
     id: 'streamdeck',
@@ -147,6 +172,17 @@ const ACTION_CATEGORIES = [
       { id: 'open-url',     name: 'Open URL',           icon: '⊕' },
       { id: 'run-cmd',      name: 'Run Command',        icon: '›_' },
       { id: 'multi-action', name: 'Multi Action',       icon: '▶▶' },
+    ],
+  },
+  {
+    id: 'widgets',
+    name: 'Widgets',
+    actions: [
+      { id: 'clock',          name: 'Clock / Date',   icon: '🕐' },
+      { id: 'system-monitor', name: 'CPU / RAM',       icon: '📊' },
+      { id: 'volume',         name: 'Volume',          icon: '🔊' },
+      { id: 'media',          name: 'Media Control',   icon: '🎵' },
+      { id: 'obs',            name: 'OBS Studio',      icon: '🟣' },
     ],
   },
 ]
@@ -339,27 +375,29 @@ function ActionsPanel() {
 }
 
 // ─── Button Grid ────────────────────────────────────────────
-function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonConfigs, onContextMenu, onDropAction }) {
+function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonConfigs, onContextMenu, onDropAction, livePreviews = {} }) {
   const [dragOverIndex, setDragOverIndex] = useState(null)
 
   return (
     <div className="button-grid" style={{ '--cols': cols }}>
       {Array.from({ length: rows * cols }, (_, i) => {
-        const cfg = buttonConfigs?.[i]
+        const cfg        = buttonConfigs?.[i]
+        const previewSrc = livePreviews[i] ?? cfg?.iconDataUrl ?? null
+        const isLive     = !!livePreviews[i]
         return (
           <button
             key={i}
             className={[
               'deck-btn',
-              selectedKey  === i ? 'selected'  : '',
-              pressedKey   === i ? 'pressed'   : '',
+              selectedKey   === i ? 'selected'  : '',
+              pressedKey    === i ? 'pressed'   : '',
               dragOverIndex === i ? 'drag-over' : '',
-              cfg?.iconDataUrl              ? 'has-icon'  : '',
-              cfg?.action?.type === 'folder' ? 'is-folder'  : '',
+              previewSrc                     ? 'has-icon'  : '',
+              cfg?.action?.type === 'folder' ? 'is-folder' : '',
             ].join(' ').trim()}
             style={{
-              backgroundImage: cfg?.iconDataUrl ? `url(${cfg.iconDataUrl})` : 'none',
-              backgroundColor: cfg?.iconDataUrl ? 'transparent' : (cfg?.bgColor ?? '#262626'),
+              backgroundImage: previewSrc ? `url(${previewSrc})` : 'none',
+              backgroundColor: previewSrc ? 'transparent' : (cfg?.bgColor ?? '#262626'),
             }}
             onClick={() => onSelectKey(i)}
             onContextMenu={e => { e.preventDefault(); onContextMenu(e, i) }}
@@ -381,8 +419,8 @@ function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonCo
             }}
             aria-label={`Button ${i + 1}`}
           >
-            {!cfg?.iconDataUrl && <span className="deck-btn-index">{i + 1}</span>}
-            {cfg?.title && <span className="deck-btn-title">{cfg.title}</span>}
+            {!previewSrc && <span className="deck-btn-index">{i + 1}</span>}
+            {cfg?.title && !isLive && <span className="deck-btn-title">{cfg.title}</span>}
           </button>
         )
       })}
@@ -757,7 +795,7 @@ function MultiActionEditor({ actions, onChange }) {
 }
 
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile', 'page-switcher', 'create-folder', 'back-folder'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile', 'page-switcher', 'create-folder', 'back-folder', 'clock', 'system-monitor', 'volume', 'media', 'obs'])
 
 // Sub-action types available inside a Multi Action (no nesting)
 const SUB_ACTION_TYPES = [
@@ -790,6 +828,12 @@ const ACTION_DEFAULTS = {
   'page-switcher':  { type: 'page-switcher',  targetPage: 0 },
   'create-folder':  { type: 'folder',          buttons: {} },
   'back-folder':    { type: 'back-folder' },
+  // Widgets
+  'clock':          { type: 'clock',          format: 'HH:MM', bgColor: '#000000', textColor: '#ffffff' },
+  'system-monitor': { type: 'system-monitor', bgColor: '#000000', textColor: '#00ff88', showCpu: true, showRam: true },
+  'volume':         { type: 'volume',         operation: 'display-only', step: 5, sink: '@DEFAULT_SINK@', bgColor: '#000000', textColor: '#00aaff' },
+  'media':          { type: 'media',          command: 'play-pause', player: '%any', bgColor: '#000000', textColor: '#ffffff' },
+  'obs':            { type: 'obs',            operation: 'toggle-record', bgColor: '#000000' },
 }
 
 // Dispatches a single leaf action — returns a Promise
@@ -804,7 +848,7 @@ function dispatchSubAction(sd, act) {
   return Promise.resolve()
 }
 
-function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder }) {
+function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder, obsScenes = [] }) {
   const [picking, setPicking] = useState(false)
 
   // ── assigned: folder ──
@@ -1065,6 +1109,241 @@ function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnter
     )
   }
 
+  // ── assigned: clock ──
+  if (action?.type === 'clock') {
+    const CLOCK_PRESETS = [
+      { label: 'HH:MM',             value: 'HH:MM'         },
+      { label: 'HH:MM:SS',          value: 'HH:MM:SS'      },
+      { label: 'hh:MM A',           value: 'hh:MM A'       },
+      { label: 'HH:MM  |  DD/mo',   value: 'HH:MM|DD/mo'   },
+      { label: 'HH:MM  |  ddd DD',  value: 'HH:MM|ddd DD'  },
+      { label: 'HH:MM:SS  |  DD/mo',value: 'HH:MM:SS|DD/mo'},
+      { label: 'ddd  |  HH:MM',     value: 'ddd|HH:MM'     },
+    ]
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <circle cx="8" cy="8" r="6.5" />
+            <path d="M8 5v3.2l2.4 1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>Clock / Date</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <span className="prop-label-sm">Format</span>
+        <select
+          className="prop-input"
+          value={action.format ?? 'HH:MM'}
+          onChange={e => onChange({ action: { ...action, format: e.target.value } })}
+        >
+          {CLOCK_PRESETS.map(p => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+        <div className="prop-row" style={{ marginTop: 8 }}>
+          <label className="prop-field-label">Background</label>
+          <input
+            type="color"
+            className="prop-color"
+            value={action.bgColor ?? '#000000'}
+            onChange={e => onChange({ action: { ...action, bgColor: e.target.value } })}
+          />
+        </div>
+        <div className="prop-row">
+          <label className="prop-field-label">Text colour</label>
+          <input
+            type="color"
+            className="prop-color"
+            value={action.textColor ?? '#ffffff'}
+            onChange={e => onChange({ action: { ...action, textColor: e.target.value } })}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // ── assigned: system-monitor ──
+  if (action?.type === 'system-monitor') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <rect x="1" y="3" width="14" height="10" rx="1.5" />
+            <path d="M3 11l2.5-4 2 2.5 2-4 2.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>CPU / RAM</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <div className="prop-row" style={{ marginTop: 8 }}>
+          <label className="prop-field-label">Background</label>
+          <input type="color" className="prop-color" value={action.bgColor ?? '#000000'}
+            onChange={e => onChange({ action: { ...action, bgColor: e.target.value } })} />
+        </div>
+        <div className="prop-row">
+          <label className="prop-field-label">Text colour</label>
+          <input type="color" className="prop-color" value={action.textColor ?? '#00ff88'}
+            onChange={e => onChange({ action: { ...action, textColor: e.target.value } })} />
+        </div>
+        <div className="prop-row" style={{ gap: 10, marginTop: 6 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={action.showCpu !== false}
+              onChange={e => onChange({ action: { ...action, showCpu: e.target.checked } })} />
+            CPU
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={action.showRam !== false}
+              onChange={e => onChange({ action: { ...action, showRam: e.target.checked } })} />
+            RAM
+          </label>
+        </div>
+        <p className="action-hint">Updates every 2 s. Display-only — no action on press.</p>
+      </div>
+    )
+  }
+
+  // ── assigned: volume ──
+  if (action?.type === 'volume') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <path d="M3 6H1v4h2l4 3V3L3 6z" fill="currentColor" stroke="none" />
+            <path d="M10 5.5a3.5 3.5 0 0 1 0 5M12.5 3a6.5 6.5 0 0 1 0 10" strokeLinecap="round" />
+          </svg>
+          <span>Volume</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <span className="prop-label-sm">Action on press</span>
+        <select className="prop-input" value={action.operation ?? 'display-only'}
+          onChange={e => onChange({ action: { ...action, operation: e.target.value } })}>
+          <option value="display-only">Display only</option>
+          <option value="raise">Raise volume</option>
+          <option value="lower">Lower volume</option>
+          <option value="mute-toggle">Mute / unmute</option>
+        </select>
+        {(action.operation === 'raise' || action.operation === 'lower') && (
+          <>
+            <span className="prop-label-sm">Step (%)</span>
+            <input type="number" className="prop-input" min="1" max="50"
+              value={action.step ?? 5}
+              onChange={e => onChange({ action: { ...action, step: Number(e.target.value) } })} />
+          </>
+        )}
+        <div className="prop-row" style={{ marginTop: 8 }}>
+          <label className="prop-field-label">Background</label>
+          <input type="color" className="prop-color" value={action.bgColor ?? '#000000'}
+            onChange={e => onChange({ action: { ...action, bgColor: e.target.value } })} />
+        </div>
+        <div className="prop-row">
+          <label className="prop-field-label">Bar colour</label>
+          <input type="color" className="prop-color" value={action.textColor ?? '#00aaff'}
+            onChange={e => onChange({ action: { ...action, textColor: e.target.value } })} />
+        </div>
+      </div>
+    )
+  }
+
+  // ── assigned: media ──
+  if (action?.type === 'media') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <circle cx="8" cy="8" r="6.5" />
+            <path d="M6 5.5l5 2.5-5 2.5V5.5z" fill="currentColor" stroke="none" />
+          </svg>
+          <span>Media Control</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <span className="prop-label-sm">Command on press</span>
+        <select className="prop-input" value={action.command ?? 'play-pause'}
+          onChange={e => onChange({ action: { ...action, command: e.target.value } })}>
+          <option value="display-only">Display track info (no action)</option>
+          <option value="play-pause">Play / Pause</option>
+          <option value="next">Next track</option>
+          <option value="previous">Previous track</option>
+          <option value="stop">Stop</option>
+        </select>
+        <span className="prop-label-sm">Player (leave blank for any)</span>
+        <input className="prop-input" type="text" placeholder="%any"
+          value={action.player ?? ''}
+          onChange={e => onChange({ action: { ...action, player: e.target.value || '%any' } })} />
+        <div className="prop-row" style={{ marginTop: 8 }}>
+          <label className="prop-field-label">Background</label>
+          <input type="color" className="prop-color" value={action.bgColor ?? '#000000'}
+            onChange={e => onChange({ action: { ...action, bgColor: e.target.value } })} />
+        </div>
+        <p className="action-hint">{action.command === 'display-only' ? 'Shows current track · artist · play state. No action on press.' : 'Fires the selected playerctl command on press. Requires playerctl.'}</p>
+      </div>
+    )
+  }
+
+  // ── assigned: obs ──
+  if (action?.type === 'obs') {
+    return (
+      <div className="assigned-action">
+        <div className="action-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+            <circle cx="8" cy="8" r="6.5" />
+            <circle cx="8" cy="8" r="3" fill="currentColor" stroke="none" />
+          </svg>
+          <span>OBS Studio</span>
+          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+        <span className="prop-label-sm">Action on press</span>
+        <select className="prop-input" value={action.operation ?? 'toggle-record'}
+          onChange={e => onChange({ action: { ...action, operation: e.target.value } })}>
+          <option value="toggle-record">Toggle record</option>
+          <option value="toggle-stream">Toggle stream</option>
+          <option value="toggle-pause-record">Pause / resume recording</option>
+          <option value="switch-scene">Switch scene</option>
+        </select>
+        {action.operation === 'switch-scene' && (
+          <>
+            <span className="prop-label-sm">Scene name</span>
+            {obsScenes.length > 0 ? (
+              <select className="prop-input" value={action.sceneName ?? ''}
+                onChange={e => onChange({ action: { ...action, sceneName: e.target.value } })}>
+                <option value="">— select scene —</option>
+                {obsScenes.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <input className="prop-input" type="text" placeholder="e.g. Gaming (connect OBS to pick)"
+                value={action.sceneName ?? ''}
+                onChange={e => onChange({ action: { ...action, sceneName: e.target.value } })} />
+            )}
+          </>
+        )}
+        <div className="prop-row" style={{ marginTop: 8 }}>
+          <label className="prop-field-label">Background</label>
+          <input type="color" className="prop-color" value={action.bgColor ?? '#000000'}
+            onChange={e => onChange({ action: { ...action, bgColor: e.target.value } })} />
+        </div>
+        <p className="action-hint">Auto-connects to OBS at localhost:4455. Enable WebSocket in OBS → Tools → WebSocket Server Settings.</p>
+      </div>
+    )
+  }
+
   // ── unassigned ──
   return (
     <div className="unassigned-action">
@@ -1094,6 +1373,16 @@ function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnter
                   ? { type: 'folder', buttons: {} }
                   : a.id === 'back-folder'
                   ? { type: 'back-folder' }
+                  : a.id === 'clock'
+                  ? { type: 'clock', format: 'HH:MM', bgColor: '#000000', textColor: '#ffffff' }
+                  : a.id === 'system-monitor'
+                  ? { type: 'system-monitor', bgColor: '#000000', textColor: '#00ff88', showCpu: true, showRam: true }
+                  : a.id === 'volume'
+                  ? { type: 'volume', operation: 'display-only', step: 5, sink: '@DEFAULT_SINK@', bgColor: '#000000', textColor: '#00aaff' }
+                  : a.id === 'media'
+                  ? { type: 'media', command: 'play-pause', player: '%any', bgColor: '#000000', textColor: '#ffffff' }
+                  : a.id === 'obs'
+                  ? { type: 'obs', operation: 'toggle-record', bgColor: '#000000' }
                   : { type: 'open-app', target: '', mode: 'gtk-launch' }
                 onChange({ action: defaults })
                 setPicking(false)
@@ -1118,7 +1407,7 @@ function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnter
   )
 }
 
-function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder }) {
+function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder, obsScenes = [] }) {
   const fileInputRef = useRef(null)
   const [showLibrary, setShowLibrary] = useState(false)
 
@@ -1149,7 +1438,7 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
       <div className="properties-body">
         <div className="prop-section">
           <span className="prop-label">Action</span>
-          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} onEnterFolder={onEnterFolder} />
+          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} onEnterFolder={onEnterFolder} obsScenes={obsScenes} />
         </div>
 
         <div className="prop-section">
@@ -1304,6 +1593,8 @@ export default function App() {
   const [clipboard,     setClipboard]     = useState(null)
   const [activeProfile, setActiveProfile] = useState('Default Profile')
   const [profiles,      setProfiles]      = useState(['Default Profile'])
+  const [livePreviews,  setLivePreviews]  = useState({})   // canvas snapshots for dynamic buttons
+  const [obsScenes,     setObsScenes]     = useState([])    // scene names fetched from OBS
 
   // Visible button configs — current page at current folder depth (derived)
   const buttonConfigs = getButtonsAt(pages, currentPage, folderPath)
@@ -1320,11 +1611,96 @@ export default function App() {
   useEffect(() => { folderPathRef.current = folderPath },                [folderPath])
   useEffect(() => { deviceRef.current = device },                        [device])
 
+  // OBS WebSocket refs (renderer-side connection — no IPC needed)
+  const obsRef               = useRef(null)
+  const obsConnectedRef      = useRef(false)
+  const obsReconnectTimerRef = useRef(null)
+  const obsConnectFnRef      = useRef(null)
+
   // Composite icon + title on canvas → send RGBA to hardware
   const drawHardwareButton = async (index, config) => {
     if (!window.streamDeck?.setButtonIcon || !iconSize) return
     stopGifAnimation(index)                              // always cancel existing animation
+    stopDynamicButton(index)                             // always cancel dynamic ticker
     const { iconDataUrl, title, bgColor } = config || {}
+
+    // Dynamic display button → hand off to live ticker
+    if (config?.action?.type === 'clock')          { startClockButton(index, config);         return }
+    if (config?.action?.type === 'system-monitor') { startSystemMonitorButton(index, config); return }
+    if (config?.action?.type === 'volume' && config?.action?.operation === 'display-only') { startVolumeDisplay(index, config); return }
+    if (config?.action?.type === 'volume' && config?.action?.operation === 'mute-toggle')  { startMuteDisplay(index, config);  return }
+    if (config?.action?.type === 'volume' && (config?.action?.operation === 'raise' || config?.action?.operation === 'lower')) {
+      // Static one-shot draw — no polling loop needed
+      if (iconDataUrl || title) { /* fall through to normal static draw below */ }
+      else {
+        const op = config.action.operation
+        const { bgColor: bg = '#000000', textColor: tc = '#00aaff' } = config.action
+        const cvs = document.createElement('canvas')
+        cvs.width = cvs.height = iconSize
+        const c = cvs.getContext('2d')
+        c.fillStyle = bg; c.fillRect(0, 0, iconSize, iconSize)
+        c.textAlign = 'center'; c.textBaseline = 'middle'
+        c.font = `${Math.round(iconSize * 0.40)}px sans-serif`
+        c.fillText(op === 'raise' ? '🔊' : '🔈', iconSize / 2, Math.round(iconSize * 0.38))
+        c.font = `bold ${Math.round(iconSize * 0.19)}px -apple-system, sans-serif`
+        c.fillStyle = tc
+        c.shadowColor = 'rgba(0,0,0,0.9)'; c.shadowBlur = 4
+        c.fillText(op === 'raise' ? 'VOL +' : 'VOL -', iconSize / 2, Math.round(iconSize * 0.76))
+        setLivePreviews(prev => ({ ...prev, [index]: cvs.toDataURL() }))
+        const { data } = c.getImageData(0, 0, iconSize, iconSize)
+        window.streamDeck?.setButtonIcon(index, Array.from(data))
+        return
+      }
+    }
+    if (config?.action?.type === 'media' && config?.action?.command === 'display-only') { startMediaDisplay(index, config); return }
+    if (config?.action?.type === 'media' && config?.action?.command && config.action.command !== 'display-only') {
+      if (iconDataUrl || title) { /* fall through to normal static draw below */ }
+      else {
+        const cmd = config.action.command
+        const { bgColor: bg = '#000000', textColor: tc = '#ffffff' } = config.action
+        const MEDIA_ICONS = { 'play-pause': '⏯', next: '⏭', previous: '⏮', stop: '⏹' }
+        const MEDIA_LABELS = { 'play-pause': 'PLAY/PAUSE', next: 'NEXT', previous: 'PREV', stop: 'STOP' }
+        const cvs = document.createElement('canvas')
+        cvs.width = cvs.height = iconSize
+        const c = cvs.getContext('2d')
+        c.fillStyle = bg; c.fillRect(0, 0, iconSize, iconSize)
+        c.textAlign = 'center'; c.textBaseline = 'middle'
+        c.font = `${Math.round(iconSize * 0.44)}px sans-serif`
+        c.fillText(MEDIA_ICONS[cmd] ?? '🎵', iconSize / 2, Math.round(iconSize * 0.40))
+        c.font = `bold ${Math.round(iconSize * 0.16)}px -apple-system, sans-serif`
+        c.fillStyle = tc; c.shadowColor = 'rgba(0,0,0,0.9)'; c.shadowBlur = 4
+        c.fillText(MEDIA_LABELS[cmd] ?? cmd.toUpperCase(), iconSize / 2, Math.round(iconSize * 0.78))
+        setLivePreviews(prev => ({ ...prev, [index]: cvs.toDataURL() }))
+        const { data } = c.getImageData(0, 0, iconSize, iconSize)
+        window.streamDeck?.setButtonIcon(index, Array.from(data))
+        return
+      }
+    }
+    if (config?.action?.type === 'obs') {
+      if (iconDataUrl || title) { /* fall through to normal static draw */ }
+      else if (config.action.operation === 'switch-scene') {
+        // Static one-shot draw for scene-switch buttons — no polling needed
+        const scene = config.action.sceneName || 'Scene'
+        const { bgColor: bg = '#000000', textColor: tc = '#ffffff' } = config.action
+        const cvs = document.createElement('canvas')
+        cvs.width = cvs.height = iconSize
+        const c = cvs.getContext('2d')
+        c.fillStyle = bg; c.fillRect(0, 0, iconSize, iconSize)
+        c.textAlign = 'center'; c.textBaseline = 'middle'
+        c.font = `${Math.round(iconSize * 0.36)}px sans-serif`
+        c.fillText('🎬', iconSize / 2, Math.round(iconSize * 0.38))
+        c.font = `bold ${Math.round(iconSize * 0.14)}px -apple-system, sans-serif`
+        c.fillStyle = tc; c.shadowColor = 'rgba(0,0,0,0.9)'; c.shadowBlur = 4
+        const label = scene.length > 8 ? scene.slice(0, 7) + '\u2026' : scene
+        c.fillText(label, iconSize / 2, Math.round(iconSize * 0.78))
+        setLivePreviews(prev => ({ ...prev, [index]: cvs.toDataURL() }))
+        const { data } = c.getImageData(0, 0, iconSize, iconSize)
+        window.streamDeck?.setButtonIcon(index, Array.from(data))
+        return
+      } else {
+        startObsStatusDisplay(index, config); return
+      }
+    }
 
     if (!iconDataUrl && !title) {
       window.streamDeck.setButtonIcon(index, null)
@@ -1390,6 +1766,355 @@ export default function App() {
   }
   const stopAllGifAnimationsRef = useRef(null)
   stopAllGifAnimationsRef.current = stopAllGifAnimations
+
+  // ── Dynamic button manager (clock, CPU, media, OBS) ──────────
+  // dynamicButtonsRef: { [buttonIndex]: { token: object, timer: number|null } }
+  const dynamicButtonsRef = useRef({})
+
+  const stopDynamicButton = (index) => {
+    const d = dynamicButtonsRef.current[index]
+    if (d) {
+      if (d.timer != null) clearTimeout(d.timer)
+      delete dynamicButtonsRef.current[index]
+    }
+    setLivePreviews(prev => {
+      if (!prev[index]) return prev
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+  }
+
+  const stopAllDynamicButtons = () => {
+    for (const d of Object.values(dynamicButtonsRef.current)) {
+      if (d?.timer != null) clearTimeout(d.timer)
+    }
+    dynamicButtonsRef.current = {}
+    setLivePreviews({})
+  }
+
+  const stopAllDynamicButtonsRef = useRef(null)
+  stopAllDynamicButtonsRef.current = stopAllDynamicButtons
+
+  // ── Plugin 1: Clock / Date display ───────────────────────────
+  const startClockButton = (index, config) => {
+    const token = {}
+    dynamicButtonsRef.current[index] = { token, timer: null }
+    const { format = 'HH:MM', bgColor = '#000000', textColor = '#ffffff' } = config?.action ?? {}
+
+    const drawClock = () => {
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+      const canvas = document.createElement('canvas')
+      canvas.width  = iconSize
+      canvas.height = iconSize
+      const ctx = canvas.getContext('2d')
+
+      ctx.fillStyle = bgColor
+      ctx.fillRect(0, 0, iconSize, iconSize)
+
+      const lines = formatClock(new Date(), format)
+      const lineCount = lines.length || 1
+      const fontSize = Math.round(iconSize * (lineCount > 1 ? 0.20 : 0.26))
+      ctx.font         = `bold ${fontSize}px -apple-system, sans-serif`
+      ctx.fillStyle    = textColor
+      ctx.textAlign    = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.shadowColor  = 'rgba(0,0,0,0.7)'
+      ctx.shadowBlur   = 4
+
+      const lineHeight = iconSize / (lineCount + 1)
+      lines.forEach((line, i) => {
+        ctx.fillText(line, iconSize / 2, lineHeight * (i + 1))
+      })
+
+      const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
+      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, Array.from(data))
+
+      // Align tick to the next second boundary
+      const msToNext = 1000 - (Date.now() % 1000)
+      dynamicButtonsRef.current[index].timer = setTimeout(drawClock, msToNext)
+    }
+
+    drawClock()
+  }
+
+  // ── Plugin 2: CPU / RAM display ───────────────────────────────
+  const startSystemMonitorButton = (index, config) => {
+    const token = {}
+    dynamicButtonsRef.current[index] = { token, timer: null }
+    const { bgColor = '#000000', textColor = '#00ff88', showCpu = true, showRam = true } = config?.action ?? {}
+
+    const draw = async () => {
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+      const stats = await window.streamDeck?.getSystemStats?.() ?? {}
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+
+      const canvas = document.createElement('canvas')
+      canvas.width  = iconSize
+      canvas.height = iconSize
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = bgColor
+      ctx.fillRect(0, 0, iconSize, iconSize)
+
+      const lines = []
+      if (showCpu) lines.push(`CPU ${stats.cpuPercent ?? 0}%`)
+      if (showRam) lines.push(`RAM ${stats.ramPercent ?? 0}%`)
+      if (!lines.length) lines.push('—')
+
+      const lineCount = lines.length
+      const fontSize  = Math.round(iconSize * (lineCount > 1 ? 0.20 : 0.26))
+      ctx.font         = `bold ${fontSize}px -apple-system, sans-serif`
+      ctx.fillStyle    = textColor
+      ctx.textAlign    = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.shadowColor  = 'rgba(0,0,0,0.7)'
+      ctx.shadowBlur   = 4
+      const lineHeight = iconSize / (lineCount + 1)
+      lines.forEach((line, i) => ctx.fillText(line, iconSize / 2, lineHeight * (i + 1)))
+
+      const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
+      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      dynamicButtonsRef.current[index].timer = setTimeout(draw, 2000)
+    }
+
+    draw()
+  }
+
+  // ── Plugin 3: Volume display ──────────────────────────────────
+  const startVolumeDisplay = (index, config) => {
+    const token = {}
+    dynamicButtonsRef.current[index] = { token, timer: null }
+    const { bgColor = '#000000', textColor = '#00aaff', sink = '@DEFAULT_SINK@' } = config?.action ?? {}
+
+    const draw = async () => {
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+      const result = await window.streamDeck?.getVolume?.(sink) ?? {}
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+
+      const canvas = document.createElement('canvas')
+      canvas.width  = iconSize
+      canvas.height = iconSize
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = bgColor
+      ctx.fillRect(0, 0, iconSize, iconSize)
+
+      const pct = result.percent ?? 0
+
+      // Percentage text
+      const fontSize = Math.round(iconSize * 0.26)
+      ctx.font         = `bold ${fontSize}px -apple-system, sans-serif`
+      ctx.fillStyle    = textColor
+      ctx.textAlign    = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.shadowColor  = 'rgba(0,0,0,0.7)'
+      ctx.shadowBlur   = 4
+      ctx.fillText(`${pct}%`, iconSize / 2, Math.round(iconSize * 0.40))
+
+      // Bar background
+      const barW = Math.round(iconSize * 0.70)
+      const barH = Math.round(iconSize * 0.10)
+      const barX = (iconSize - barW) / 2
+      const barY = Math.round(iconSize * 0.62)
+      ctx.fillStyle = 'rgba(255,255,255,0.15)'
+      ctx.fillRect(barX, barY, barW, barH)
+      ctx.fillStyle = textColor
+      ctx.fillRect(barX, barY, Math.round(barW * pct / 100), barH)
+
+      const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
+      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      dynamicButtonsRef.current[index].timer = setTimeout(draw, 2000)
+    }
+
+    draw()
+  }
+
+  // ── Plugin 3b: Mute indicator display ────────────────────────
+  const startMuteDisplay = (index, config) => {
+    const token = {}
+    dynamicButtonsRef.current[index] = { token, timer: null }
+    const { bgColor = '#000000', sink = '@DEFAULT_SINK@' } = config?.action ?? {}
+
+    const draw = async () => {
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+      const result = await window.streamDeck?.getMute?.(sink) ?? {}
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+
+      const muted = result.muted ?? false
+
+      const canvas = document.createElement('canvas')
+      canvas.width  = iconSize
+      canvas.height = iconSize
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = bgColor
+      ctx.fillRect(0, 0, iconSize, iconSize)
+
+      // Speaker emoji — large, centred
+      ctx.font         = `${Math.round(iconSize * 0.52)}px sans-serif`
+      ctx.textAlign    = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(muted ? '🔇' : '🔊', iconSize / 2, Math.round(iconSize * 0.43))
+
+      // Status label below
+      const fs = Math.round(iconSize * 0.16)
+      ctx.font      = `bold ${fs}px -apple-system, sans-serif`
+      ctx.fillStyle = muted ? '#ff4444' : '#00aaff'
+      ctx.shadowColor = 'rgba(0,0,0,0.9)'
+      ctx.shadowBlur  = 4
+      ctx.fillText(muted ? 'MUTED' : 'SOUND ON', iconSize / 2, Math.round(iconSize * 0.82))
+
+      const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
+      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      dynamicButtonsRef.current[index].timer = setTimeout(draw, 1000)
+    }
+
+    draw()
+  }
+
+  // ── Plugin 4: Media display ───────────────────────────────────
+  const startMediaDisplay = (index, config) => {
+    const token = {}
+    dynamicButtonsRef.current[index] = { token, timer: null }
+    const { bgColor = '#000000', textColor = '#ffffff', player = '%any' } = config?.action ?? {}
+
+    const draw = async () => {
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+      const info = await window.streamDeck?.playerctlStatus?.(player) ?? null
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+
+      const canvas = document.createElement('canvas')
+      canvas.width  = iconSize
+      canvas.height = iconSize
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = bgColor
+      ctx.fillRect(0, 0, iconSize, iconSize)
+
+      if (!info) {
+        // No active player
+        ctx.fillStyle = 'rgba(255,255,255,0.25)'
+        ctx.font = `${Math.round(iconSize * 0.30)}px sans-serif`
+        ctx.textAlign    = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('⏹', iconSize / 2, iconSize / 2)
+      } else {
+        const isPlaying = info.status === 'Playing'
+
+        // Status icon top-centre
+        ctx.font = `${Math.round(iconSize * 0.22)}px sans-serif`
+        ctx.fillStyle    = isPlaying ? '#1db954' : 'rgba(255,255,255,0.45)'
+        ctx.textAlign    = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillText(isPlaying ? '▶' : '⏸', iconSize / 2, Math.round(iconSize * 0.06))
+
+        // Truncate helper
+        const truncate = (s, maxPx) => {
+          if (!s) return ''
+          if (ctx.measureText(s).width <= maxPx) return s
+          let t = s
+          while (t.length > 1 && ctx.measureText(t + '…').width > maxPx) t = t.slice(0, -1)
+          return t + '…'
+        }
+
+        const maxW = iconSize * 0.90
+        ctx.shadowColor = 'rgba(0,0,0,0.9)'
+        ctx.shadowBlur  = 4
+
+        // Title
+        const fs1 = Math.round(iconSize * 0.16)
+        ctx.font = `bold ${fs1}px -apple-system, sans-serif`
+        ctx.fillStyle    = textColor
+        ctx.textBaseline = 'middle'
+        ctx.fillText(truncate(info.title || '—', maxW), iconSize / 2, Math.round(iconSize * 0.52))
+
+        // Artist
+        const fs2 = Math.round(iconSize * 0.13)
+        ctx.font = `${fs2}px -apple-system, sans-serif`
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'
+        if (info.artist) ctx.fillText(truncate(info.artist, maxW), iconSize / 2, Math.round(iconSize * 0.72))
+      }
+
+      const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
+      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      dynamicButtonsRef.current[index].timer = setTimeout(draw, 3000)
+    }
+
+    draw()
+  }
+
+  // ── Plugin 5: OBS WebSocket status display ────────────────────
+  const startObsStatusDisplay = (index, config) => {
+    const token = {}
+    dynamicButtonsRef.current[index] = { token, timer: null }
+    const { bgColor = '#000000' } = config?.action ?? {}
+
+    const draw = async () => {
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+
+      let isRecording  = false
+      let isStreaming  = false
+      let isConnected  = obsConnectedRef.current
+
+      if (isConnected && obsRef.current) {
+        try {
+          // Wrap each call in a 5-second timeout so a stale connection that
+          // never fires ConnectionClosed doesn't freeze the draw loop.
+          const withTimeout = (p) => {
+            let t
+            const tPromise = new Promise((_, rej) => { t = setTimeout(() => rej(new Error('OBS call timeout')), 5000) })
+            return Promise.race([p, tPromise]).finally(() => clearTimeout(t))
+          }
+          const [recStatus, streamStatus] = await Promise.all([
+            withTimeout(obsRef.current.call('GetRecordStatus')),
+            withTimeout(obsRef.current.call('GetStreamStatus')),
+          ])
+          isRecording = recStatus?.outputActive  ?? false
+          isStreaming = streamStatus?.outputActive ?? false
+        } catch {
+          isConnected = false
+        }
+      }
+
+      if (dynamicButtonsRef.current[index]?.token !== token) return
+
+      const canvas = document.createElement('canvas')
+      canvas.width  = iconSize
+      canvas.height = iconSize
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = bgColor
+      ctx.fillRect(0, 0, iconSize, iconSize)
+
+      // Status dot
+      const dotR = Math.round(iconSize * 0.12)
+      const dotX = iconSize / 2
+      const dotY = Math.round(iconSize * 0.30)
+      ctx.beginPath()
+      ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2)
+      ctx.fillStyle = !isConnected ? '#555555' : isRecording ? '#ff2020' : isStreaming ? '#ff6600' : '#22aa22'
+      ctx.fill()
+
+      // Status label
+      const label   = !isConnected ? 'OBS OFF' : isRecording ? 'REC' : isStreaming ? 'LIVE' : 'READY'
+      const fontSize = Math.round(iconSize * 0.17)
+      ctx.font = `bold ${fontSize}px -apple-system, sans-serif`
+      ctx.fillStyle    = '#ffffff'
+      ctx.textAlign    = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.shadowColor  = 'rgba(0,0,0,0.8)'
+      ctx.shadowBlur   = 4
+      ctx.fillText(label, iconSize / 2, Math.round(iconSize * 0.64))
+
+      const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
+      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      dynamicButtonsRef.current[index].timer = setTimeout(draw, 3000)
+    }
+
+    draw()
+  }
 
   const startGifAnimation = async (index, config) => {
     const token = {}
@@ -1538,6 +2263,57 @@ export default function App() {
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-connect to OBS WebSocket (localhost:4455, no password) on mount
+  useEffect(() => {
+    const connect = async () => {
+      if (obsConnectedRef.current) return
+      try {
+        const obs = new OBSWebSocket()
+        obs.on('ConnectionClosed', () => {
+          obsConnectedRef.current = false
+          obsRef.current = null
+          setObsScenes([])
+          obsReconnectTimerRef.current = setTimeout(() => obsConnectFnRef.current?.(), 5000)
+        })
+        // Race the connect against a 3-second timeout so a firewalled / slow port
+        // doesn't block for the OS TCP-timeout period (30–60 s).
+        let connectTimeout
+        const timeoutPromise = new Promise((_, reject) => {
+          connectTimeout = setTimeout(() => reject(new Error('OBS connect timeout')), 3000)
+        })
+        await Promise.race([obs.connect('ws://localhost:4455', undefined), timeoutPromise])
+          .finally(() => clearTimeout(connectTimeout))
+        if (obsReconnectTimerRef.current != null) {
+          clearTimeout(obsReconnectTimerRef.current)
+          obsReconnectTimerRef.current = null
+        }
+        obsRef.current = obs
+        obsConnectedRef.current = true
+        // Fetch scene list and keep it up to date
+        const sortScenes = (scenes = []) =>
+          [...scenes].sort((a, b) => (b.sceneIndex ?? 0) - (a.sceneIndex ?? 0)).map(s => s.sceneName).filter(Boolean)
+        try {
+          const { scenes } = await obs.call('GetSceneList')
+          setObsScenes(sortScenes(scenes))
+        } catch {}
+        obs.on('SceneListChanged', (data) => setObsScenes(sortScenes(data?.scenes)))
+      } catch {
+        // OBS not running / not reachable — will retry after 5 s
+        try { obsRef.current?.disconnect() } catch {}
+        obsRef.current = null
+        setObsScenes([])
+        obsReconnectTimerRef.current = setTimeout(() => obsConnectFnRef.current?.(), 5000)
+      }
+    }
+    obsConnectFnRef.current = connect
+    connect()
+    return () => {
+      if (obsReconnectTimerRef.current != null) clearTimeout(obsReconnectTimerRef.current)
+      obsRef.current?.disconnect()
+      obsConnectedRef.current = false
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-save whenever pages/profile change (debounced 500ms)
   useEffect(() => {
     if (!window.streamDeck?.saveProfile) return
@@ -1586,6 +2362,35 @@ export default function App() {
             await dispatchSubAction(sd, sub)
           }
         })()
+      } else if (action?.type === 'volume' && action.operation && action.operation !== 'display-only') {
+        const step = action.step ?? 5
+        const sink = action.sink || '@DEFAULT_SINK@'
+        if (action.operation === 'raise') {
+          window.streamDeck.pactlCommand(['set-sink-volume', sink, `+${step}%`])
+        } else if (action.operation === 'lower') {
+          window.streamDeck.pactlCommand(['set-sink-volume', sink, `-${step}%`])
+        } else if (action.operation === 'mute-toggle') {
+          window.streamDeck.pactlCommand(['set-sink-mute', sink, 'toggle'])
+        }
+      } else if (action?.type === 'media' && action.command && action.command !== 'display-only') {
+        window.streamDeck.playerctlCommand(action.command, action.player || '%any')
+      } else if (action?.type === 'obs' && obsConnectedRef.current && obsRef.current) {
+        const obs = obsRef.current
+        ;(async () => {
+          try {
+            if (action.operation === 'toggle-record') {
+              await obs.call('ToggleRecord')
+            } else if (action.operation === 'toggle-stream') {
+              await obs.call('ToggleStream')
+            } else if (action.operation === 'toggle-pause-record') {
+              await obs.call('ToggleRecordPause')
+            } else if (action.operation === 'switch-scene' && action.sceneName) {
+              await obs.call('SetCurrentProgramScene', { sceneName: action.sceneName })
+            }
+          } catch (err) {
+            console.warn('[OBS] action failed:', err.message)
+          }
+        })()
       }
     })
     const offUp = window.streamDeck.onKeyUp(({ index }) => {
@@ -1593,10 +2398,11 @@ export default function App() {
       // Redraw the hardware button to restore the user's icon after the press-flash
       drawHardwareButton(index, buttonConfigsRef.current[index])
     })
-    const offSleep       = window.streamDeck.onSleep(() => { stopAllGifAnimationsRef.current?.(); setSleeping(true) })
+    const offSleep       = window.streamDeck.onSleep(() => { stopAllGifAnimationsRef.current?.(); stopAllDynamicButtonsRef.current?.(); setSleeping(true) })
     const offWake        = window.streamDeck.onWake(()  => setSleeping(false))
     const offDisconnect  = window.streamDeck.onDisconnect?.(() => {
       stopAllGifAnimationsRef.current?.()
+      stopAllDynamicButtonsRef.current?.()
       setDevice(null)
       setSleeping(false)
     })
@@ -1730,6 +2536,7 @@ export default function App() {
                   pressedKey={pressedKey}
                   onSelectKey={handleSelect}
                   buttonConfigs={buttonConfigs}
+                  livePreviews={livePreviews}
                   onContextMenu={(e, i) => setContextMenu({ x: e.clientX, y: e.clientY, keyIndex: i })}
                   onDropAction={(index, actionId) => {
                     const action = ACTION_DEFAULTS[actionId]
@@ -1814,6 +2621,7 @@ export default function App() {
             profiles={profiles}
             pageCount={pages.length}
             onEnterFolder={() => { enterFolder(selectedKey); setSelectedKey(null) }}
+            obsScenes={obsScenes}
           />
         )}
       </div>
