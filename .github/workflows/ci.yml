@@ -44,20 +44,25 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      # node-hid needs libudev; sharp needs its own native libs
+      # node-hid needs libudev; node-hid's vendored node-addon-api fails to
+      # compile on g++≥12 (TypedThreadSafeFunction template syntax regression).
+      # Explicitly install and pin to g++-11, which ships in ubuntu-22.04.
       - name: Install system dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y libudev-dev libusb-1.0-0-dev
+          sudo apt-get install -y libudev-dev libusb-1.0-0-dev gcc-11 g++-11
 
       - name: Install Node dependencies
         run: npm ci
 
       # electron-builder invokes @electron/rebuild internally when packaging,
       # so no separate rebuild step is needed here.
+      # CC/CXX are passed so node-gyp (used to compile node-hid) uses g++-11.
       - name: Build renderer (Vite) + package Electron app
         run: npm run electron:build
         env:
+          CC: gcc-11
+          CXX: g++-11
           # Allows electron-builder to publish/download if needed
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
