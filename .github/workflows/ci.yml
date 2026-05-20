@@ -30,7 +30,11 @@ jobs:
   build:
     name: Build (Linux)
     needs: test
-    runs-on: ubuntu-latest
+    # ubuntu-22.04 ships g++ 11 which can compile node-hid's native module.
+    # ubuntu-24.04 (ubuntu-latest) uses g++ 13/14 which breaks node-hid's
+    # vendored node-addon-api due to a TypedThreadSafeFunction template syntax
+    # incompatibility.
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v4
@@ -49,12 +53,8 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      # Rebuild native modules (node-hid, sharp) against the bundled Electron
-      - name: Rebuild native modules for Electron
-        run: npx electron-rebuild
-        env:
-          npm_config_build_from_source: true
-
+      # electron-builder invokes @electron/rebuild internally when packaging,
+      # so no separate rebuild step is needed here.
       - name: Build renderer (Vite) + package Electron app
         run: npm run electron:build
         env:
