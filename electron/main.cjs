@@ -138,6 +138,12 @@ function createWindow() {
   })
 }
 
+// ── Module-level state for CPU polling (plugin: system monitor) ──────────────
+let lastCpuTimes = null
+
+// ── Allowed playerctl commands (allowlist for security) ──────────────────────
+const PLAYERCTL_COMMANDS = new Set(['play', 'pause', 'play-pause', 'next', 'previous', 'stop'])
+
 // ── IPC handlers — registered once; use module-level deck/state ─────────────
 function registerIpcHandlers() {
   // Hotkey via xdotool (Linux)
@@ -267,6 +273,115 @@ function registerIpcHandlers() {
     if (!deck) return
     if (rgbaData) await deck.fillKeyBuffer(index, Buffer.from(rgbaData), { format: 'rgba' })
     else          await deck.fillKeyColor(index, 0, 0, 0)
+  })
+
+  // ── Plugin 2: CPU / RAM stats ──────────────────────────────────────────────
+  ipcMain.handle('system:stats', async () => {
+    try {
+      const [statFile, memFile] = await Promise.all([
+        fs.promises.readFile('/proc/stat',    'utf8'),
+        fs.promises.readFile('/proc/meminfo', 'utf8'),
+      ])
+
+      // CPU: first line of /proc/stat
+      const vals   = statFile.split('\n')[0].split(/\s+/).slice(1).map(Number)
+      const idle   = vals[3] + (vals[4] ?? 0)   // idle + iowait
+      const total  = vals.reduce((a, b) => a + b, 0)
+      const active = total - idle
+
+      let cpuPercent = 0
+      if (lastCpuTimes) {
+        const dTotal  = total  - lastCpuTimes.total
+        const dActive = active - lastCpuTimes.active
+        cpuPercent = dTotal > 0 ? Math.round((dActive / dTotal) * 100) : 0
+      }
+      lastCpuTimes = { total, active }
+
+      // RAM: MemTotal / MemAvailable from /proc/meminfo (values in kB)
+      const memTotal = parseInt(memFile.match(/MemTotal:\s+(\d+)/)?.[1] ?? 0)
+      const memAvail = parseInt(memFile.match(/MemAvailable:\s+(\d+)/)?.[1] ?? 0)
+      const ramUsedMB  = Math.round((memTotal - memAvail) / 1024)
+      const ramTotalMB = Math.round(memTotal / 1024)
+      const ramPercent = memTotal > 0 ? Math.round(((memTotal - memAvail) / memTotal) * 100) : 0
+
+      return { cpuPercent, ramPercent, ramUsedMB, ramTotalMB }
+    } catch (err) {
+      return { error: err.message }
+    }
+  })
+
+  // ── Plugin 3: Volume via pactl ─────────────────────────────────────────────
+  ipcMain.handle('action:pactl', async (_, { args }) => {
+    if (!Array.isArray(args)) return { error: 'Invalid args' }
+    const safe = args.map(String).filter(a => /^[@A-Za-z0-9_.+%:-]+$/.test(a))
+    if (safe.length !== args.length) return { error: 'Invalid pactl arguments' }
+    return new Promise(resolve => {
+      const proc = spawn('pactl', safe, { stdio: 'ignore' })
+      const kill  = setTimeout(() => { try { proc.kill() } catch {} resolve({ error: 'timeout' }) }, 1500)
+      proc.on('close', code  => { clearTimeout(kill); resolve({ code }) })
+      proc.on('error', err   => { clearTimeout(kill); resolve({ error: err.message }) })
+    })
+  })
+
+  ipcMain.handle('pactl:get-volume', async (_, { sink = '@DEFAULT_SINK@' } = {}) => {
+    if (!/^[@A-Za-z0-9_.:-]+$/.test(sink)) return { error: 'Invalid sink name' }
+    return new Promise(resolve => {
+      const proc = spawn('pactl', ['get-sink-volume', sink], { stdio: ['ignore', 'pipe', 'ignore'] })
+      let out = ''
+      const kill = setTimeout(() => { try { proc.kill() } catch {} resolve({ percent: 0, muted: false }) }, 3000)
+      proc.stdout.on('data', d => { out += d })
+      proc.on('close', () => {
+        clearTimeout(kill)
+        const m = out.match(/(\d+)%/)
+        resolve(m ? { percent: parseInt(m[1]), muted: false } : { percent: 0, muted: false })
+      })
+      proc.on('error', err => { clearTimeout(kill); resolve({ error: err.message }) })
+    })
+  })
+
+  ipcMain.handle('pactl:get-mute', async (_, { sink = '@DEFAULT_SINK@' } = {}) => {
+    if (!/^[@A-Za-z0-9_.:-]+$/.test(sink)) return { error: 'Invalid sink name' }
+    return new Promise(resolve => {
+      const proc = spawn('pactl', ['get-sink-mute', sink], { stdio: ['ignore', 'pipe', 'ignore'] })
+      let out = ''
+      const kill = setTimeout(() => { try { proc.kill() } catch {} resolve({ muted: false }) }, 3000)
+      proc.stdout.on('data', d => { out += d })
+      proc.on('close', () => {
+        clearTimeout(kill)
+        resolve({ muted: /yes/i.test(out) })
+      })
+      proc.on('error', err => { clearTimeout(kill); resolve({ error: err.message }) })
+    })
+  })
+
+  // ── Plugin 4: Media control via playerctl ──────────────────────────────────
+  ipcMain.handle('action:playerctl', async (_, { command, player = '%any' }) => {
+    if (!PLAYERCTL_COMMANDS.has(command))        return { error: 'Invalid command' }
+    if (!/^[a-zA-Z0-9_.%@-]+$/.test(player))    return { error: 'Invalid player name' }
+    return new Promise(resolve => {
+      const proc = spawn('playerctl', [`--player=${player}`, command], { stdio: 'ignore' })
+      proc.on('close', code => resolve({ code }))
+      proc.on('error', err  => resolve({ error: err.message }))
+    })
+  })
+
+  ipcMain.handle('playerctl:status', async (_, { player = '%any' } = {}) => {
+    if (!/^[a-zA-Z0-9_.%@-]+$/.test(player)) return null
+    const run = (args) => new Promise(res => {
+      let out = ''
+      const p = spawn('playerctl', [`--player=${player}`, ...args], { stdio: ['ignore', 'pipe', 'ignore'] })
+      p.stdout.on('data', d => { out += d })
+      p.on('close', ()  => res(out.trim()))
+      p.on('error', ()  => res(null))
+      setTimeout(() => { try { p.kill() } catch {} res(null) }, 500)
+    })
+    const [status, title, artist] = await Promise.all([
+      run(['status']),
+      run(['metadata', 'title']),
+      run(['metadata', 'artist']),
+    ])
+    if (!status || status === 'No players found') return null
+    return { status, title: title || '', artist: artist || '' }
   })
 }
 

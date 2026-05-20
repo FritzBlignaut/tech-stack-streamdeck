@@ -26,4 +26,17 @@ contextBridge.exposeInMainWorld('streamDeck', {
   browseIconDir:    ()              => ipcRenderer.invoke('icons:browse-dir'),
   scanIconDir:      (dirPath)       => ipcRenderer.invoke('icons:scan-dir',  { dirPath }),
   loadIconFile:     (filePath)      => ipcRenderer.invoke('icons:load-file', { filePath }),
+
+  // Plugin 2: CPU / RAM
+  getSystemStats:   ()              => ipcRenderer.invoke('system:stats'),
+
+  // Plugin 3: Volume (pactl)
+  pactlCommand:     (args)          => ipcRenderer.invoke('action:pactl',       { args }),
+  getVolume:        (sink)          => ipcRenderer.invoke('pactl:get-volume',    { sink }),
+  getMute:          (sink)          => ipcRenderer.invoke('pactl:get-mute',      { sink }),
+
+
+  // Plugin 4: Media (playerctl)
+  playerctlCommand: (command, player) => ipcRenderer.invoke('action:playerctl', { command, player }),
+  playerctlStatus:  (player)          => ipcRenderer.invoke('playerctl:status', { player }),
 })
