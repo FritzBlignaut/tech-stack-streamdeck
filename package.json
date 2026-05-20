@@ -12,7 +12,28 @@
     "test": "vitest",
     "test:run": "vitest run",
     "electron:dev": "VITE_PORT=$(ss -tlnp 2>/dev/null | grep -oE ':517[3-9]' | tr -d ':' | head -1 || echo 5173) electron .",
-    "rebuild": "electron-rebuild -f -w node-hid"
+    "rebuild": "electron-rebuild -f -w node-hid",
+    "electron:build": "vite build && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.techstack.streamdeck",
+    "productName": "Tech Stack Stream Deck",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb",      "arch": ["x64"] }
+      ],
+      "category": "Utility",
+      "executableName": "tech-stack-streamdeck"
+    }
   },
   "dependencies": {
     "@elgato-stream-deck/node": "^7.6.2",
@@ -32,6 +53,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "electron-builder": "^26.8.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
