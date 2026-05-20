@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { parseGIF, decompressFrames } from 'gifuct-js'
 import OBSWebSocket from 'obs-websocket-js'
 import './App.css'
+import { getButtonsAt, immutableSetButton, formatClock } from './utils.js'
 
 const DEVICE_MODEL_NAMES = {
   originalv2: 'Stream Deck Original V2',
@@ -96,60 +97,7 @@ async function extractGifFrames(dataUrl, iconSize, title) {
   }
 }
 
-// ─── Folder navigation helpers (pure, module-level) ─────────
-// Return the buttons object at the given folder path within pages
-function getButtonsAt(pages, pageIndex, folderPath) {
-  let buttons = pages[pageIndex] ?? {}
-  for (const idx of folderPath) {
-    buttons = buttons[idx]?.action?.buttons ?? {}
-  }
-  return buttons
-}
-
-// Deep-immutable update of a single button inside pages.
-// config === null removes the button; otherwise it sets it.
-function immutableSetButton(pages, pageIndex, folderPath, buttonIndex, config) {
-  const newPages = [...pages]
-  function update(buttons, path) {
-    if (path.length === 0) {
-      if (config === null) {
-        const { [buttonIndex]: _gone, ...rest } = buttons
-        return rest
-      }
-      return { ...buttons, [buttonIndex]: config }
-    }
-    const [head, ...tail] = path
-    const btn = buttons[head] ?? {}
-    const inner = update(btn.action?.buttons ?? {}, tail)
-    return { ...buttons, [head]: { ...btn, action: { ...btn.action, type: 'folder', buttons: inner } } }
-  }
-  newPages[pageIndex] = update(newPages[pageIndex] ?? {}, folderPath)
-  return newPages
-}
-
-// ── Clock format helper ────────────────────────────────────────────────────────
-// Tokens: HH=24h, hh=12h, MM=min, SS=sec, DD=day, mo=month-num, YYYY=year,
-//         ddd=weekday-short, MMM=month-short, A=AM/PM
-// Use | to split text into multiple lines on the button.
-function formatClock(date, fmt) {
-  const pad  = n => String(n).padStart(2, '0')
-  const h24  = date.getHours()
-  const h12  = h24 % 12 || 12
-  const ampm = h24 < 12 ? 'AM' : 'PM'
-  // Replace longest tokens first to prevent partial substitutions (MMM before MM)
-  const result = fmt
-    .replaceAll('YYYY', String(date.getFullYear()))
-    .replaceAll('MMM',  ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][date.getMonth()])
-    .replaceAll('ddd',  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][date.getDay()])
-    .replaceAll('HH',   pad(h24))
-    .replaceAll('hh',   pad(h12))
-    .replaceAll('MM',   pad(date.getMinutes()))
-    .replaceAll('SS',   pad(date.getSeconds()))
-    .replaceAll('DD',   pad(date.getDate()))
-    .replaceAll('mo',   pad(date.getMonth() + 1))
-    .replaceAll('A',    ampm)
-  return result.split('|').map(s => s.trim()).filter(Boolean)
-}
+// ─── Folder navigation helpers + clock formatter are imported from ./utils.js ──
 
 const ACTION_CATEGORIES = [
   {
@@ -375,7 +323,7 @@ function ActionsPanel() {
 }
 
 // ─── Button Grid ────────────────────────────────────────────
-function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonConfigs, onContextMenu, onDropAction, livePreviews = {} }) {
+export function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonConfigs, onContextMenu, onDropAction, livePreviews = {} }) {
   const [dragOverIndex, setDragOverIndex] = useState(null)
 
   return (
@@ -848,7 +796,7 @@ function dispatchSubAction(sd, act) {
   return Promise.resolve()
 }
 
-function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder, obsScenes = [] }) {
+export function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder, obsScenes = [] }) {
   const [picking, setPicking] = useState(false)
 
   // ── assigned: folder ──
