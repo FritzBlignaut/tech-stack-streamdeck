@@ -4,6 +4,17 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, net, Tray, Menu, nativeIm
 const path   = require('path')
 const fs     = require('fs')
 const { spawn } = require('child_process')
+const {
+  PLAYERCTL_COMMANDS,
+  isValidHotkey,
+  isValidUrl,
+  isValidPactlArgs,
+  isValidSinkName,
+  isValidPlayerctlCommand,
+  isValidPlayerName,
+  sanitizeProfileName,
+} = require('./validation.cjs')
+const { parseSystemStats } = require('./stats.cjs')
 
 let mainWindow
 let libraryDir = null
@@ -141,14 +152,13 @@ function createWindow() {
 // ── Module-level state for CPU polling (plugin: system monitor) ──────────────
 let lastCpuTimes = null
 
-// ── Allowed playerctl commands (allowlist for security) ──────────────────────
-const PLAYERCTL_COMMANDS = new Set(['play', 'pause', 'play-pause', 'next', 'previous', 'stop'])
+
 
 // ── IPC handlers — registered once; use module-level deck/state ─────────────
 function registerIpcHandlers() {
   // Hotkey via xdotool (Linux)
   ipcMain.handle('action:hotkey', async (_, { keys }) => {
-    if (!keys || !/^[a-zA-Z0-9+_-]+$/.test(keys)) return { error: 'Invalid hotkey string' }
+    if (!isValidHotkey(keys)) return { error: 'Invalid hotkey string' }
     return new Promise((resolve) => {
       const proc = spawn('xdotool', ['key', '--clearmodifiers', '--', keys], { stdio: 'ignore' })
       proc.on('close', (code) => resolve({ code }))
@@ -177,9 +187,8 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('action:open-url', async (_, { url }) => {
-    if (!url?.trim()) return { error: 'No URL specified' }
+    if (!isValidUrl(url)) return { error: 'Only http/https/ftp URLs are allowed' }
     const safe = url.trim()
-    if (!/^https?:\/\//i.test(safe) && !/^ftp:\/\//i.test(safe)) return { error: 'Only http/https/ftp URLs are allowed' }
     return new Promise((resolve) => {
       const proc = spawn('xdg-open', [safe], { detached: true, stdio: 'ignore', env: process.env })
       proc.unref()
@@ -253,8 +262,7 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('profile:create', async (_, { name }) => {
-    if (!name || typeof name !== 'string') return { ok: false, error: 'Invalid name' }
-    const safe = name.trim().replace(/[/\\:*?"<>|]/g, '')
+    const safe = sanitizeProfileName(name)
     if (!safe) return { ok: false, error: 'Invalid profile name' }
     const p = getProfilePath(safe)
     try { await fs.promises.access(p); return { ok: false, error: 'Profile already exists' } } catch { /* doesn't exist — good */ }
@@ -283,28 +291,9 @@ function registerIpcHandlers() {
         fs.promises.readFile('/proc/meminfo', 'utf8'),
       ])
 
-      // CPU: first line of /proc/stat
-      const vals   = statFile.split('\n')[0].split(/\s+/).slice(1).map(Number)
-      const idle   = vals[3] + (vals[4] ?? 0)   // idle + iowait
-      const total  = vals.reduce((a, b) => a + b, 0)
-      const active = total - idle
-
-      let cpuPercent = 0
-      if (lastCpuTimes) {
-        const dTotal  = total  - lastCpuTimes.total
-        const dActive = active - lastCpuTimes.active
-        cpuPercent = dTotal > 0 ? Math.round((dActive / dTotal) * 100) : 0
-      }
-      lastCpuTimes = { total, active }
-
-      // RAM: MemTotal / MemAvailable from /proc/meminfo (values in kB)
-      const memTotal = parseInt(memFile.match(/MemTotal:\s+(\d+)/)?.[1] ?? 0)
-      const memAvail = parseInt(memFile.match(/MemAvailable:\s+(\d+)/)?.[1] ?? 0)
-      const ramUsedMB  = Math.round((memTotal - memAvail) / 1024)
-      const ramTotalMB = Math.round(memTotal / 1024)
-      const ramPercent = memTotal > 0 ? Math.round(((memTotal - memAvail) / memTotal) * 100) : 0
-
-      return { cpuPercent, ramPercent, ramUsedMB, ramTotalMB }
+      const result = parseSystemStats(statFile, memFile, lastCpuTimes)
+      lastCpuTimes = result.newCpuTimes
+      return { cpuPercent: result.cpuPercent, ramPercent: result.ramPercent, ramUsedMB: result.ramUsedMB, ramTotalMB: result.ramTotalMB }
     } catch (err) {
       return { error: err.message }
     }
@@ -312,9 +301,8 @@ function registerIpcHandlers() {
 
   // ── Plugin 3: Volume via pactl ─────────────────────────────────────────────
   ipcMain.handle('action:pactl', async (_, { args }) => {
-    if (!Array.isArray(args)) return { error: 'Invalid args' }
-    const safe = args.map(String).filter(a => /^[@A-Za-z0-9_.+%:-]+$/.test(a))
-    if (safe.length !== args.length) return { error: 'Invalid pactl arguments' }
+    if (!isValidPactlArgs(args)) return { error: 'Invalid pactl arguments' }
+    const safe = args.map(String)
     return new Promise(resolve => {
       const proc = spawn('pactl', safe, { stdio: 'ignore' })
       const kill  = setTimeout(() => { try { proc.kill() } catch {} resolve({ error: 'timeout' }) }, 1500)
@@ -324,7 +312,7 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('pactl:get-volume', async (_, { sink = '@DEFAULT_SINK@' } = {}) => {
-    if (!/^[@A-Za-z0-9_.:-]+$/.test(sink)) return { error: 'Invalid sink name' }
+    if (!isValidSinkName(sink)) return { error: 'Invalid sink name' }
     return new Promise(resolve => {
       const proc = spawn('pactl', ['get-sink-volume', sink], { stdio: ['ignore', 'pipe', 'ignore'] })
       let out = ''
@@ -340,7 +328,7 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('pactl:get-mute', async (_, { sink = '@DEFAULT_SINK@' } = {}) => {
-    if (!/^[@A-Za-z0-9_.:-]+$/.test(sink)) return { error: 'Invalid sink name' }
+    if (!isValidSinkName(sink)) return { error: 'Invalid sink name' }
     return new Promise(resolve => {
       const proc = spawn('pactl', ['get-sink-mute', sink], { stdio: ['ignore', 'pipe', 'ignore'] })
       let out = ''
@@ -356,8 +344,8 @@ function registerIpcHandlers() {
 
   // ── Plugin 4: Media control via playerctl ──────────────────────────────────
   ipcMain.handle('action:playerctl', async (_, { command, player = '%any' }) => {
-    if (!PLAYERCTL_COMMANDS.has(command))        return { error: 'Invalid command' }
-    if (!/^[a-zA-Z0-9_.%@-]+$/.test(player))    return { error: 'Invalid player name' }
+    if (!isValidPlayerctlCommand(command))  return { error: 'Invalid command' }
+    if (!isValidPlayerName(player))         return { error: 'Invalid player name' }
     return new Promise(resolve => {
       const proc = spawn('playerctl', [`--player=${player}`, command], { stdio: 'ignore' })
       proc.on('close', code => resolve({ code }))
@@ -366,7 +354,7 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('playerctl:status', async (_, { player = '%any' } = {}) => {
-    if (!/^[a-zA-Z0-9_.%@-]+$/.test(player)) return null
+    if (!isValidPlayerName(player)) return null
     const run = (args) => new Promise(res => {
       let out = ''
       const p = spawn('playerctl', [`--player=${player}`, ...args], { stdio: ['ignore', 'pipe', 'ignore'] })
