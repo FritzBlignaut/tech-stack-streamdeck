@@ -74,6 +74,19 @@ function createTrayIconPng() {
   ])
 }
 
+// Central quit — destroys GUI elements immediately then calls app.exit(0).
+// app.exit bypasses the window-all-closed no-op handler that otherwise keeps
+// the process alive as a background tray app, guaranteeing the process exits.
+function doQuit() {
+  if (isQuitting) return
+  isQuitting = true
+  if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null }
+  if (deck) { deck.clearPanel().catch(() => {}); deck.close().catch(() => {}) }
+  if (tray) { tray.destroy(); tray = null }           // remove icon immediately
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
+  app.exit(0)
+}
+
 function createTray() {
   const icon = nativeImage.createFromBuffer(createTrayIconPng())
   tray = new Tray(icon)
@@ -81,7 +94,7 @@ function createTray() {
   const menu = Menu.buildFromTemplate([
     { label: 'Show Window', click: () => { mainWindow?.show(); mainWindow?.focus() } },
     { type: 'separator' },
-    { label: 'Quit',        click: () => { isQuitting = true; if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy(); app.quit() } },
+    { label: 'Quit', click: doQuit },
   ])
   tray.setContextMenu(menu)
   // Left-click shows window (works on Windows/KDE; GNOME AppIndicator ignores it)
@@ -565,12 +578,15 @@ app.whenReady().then(async () => {
 // Tray keeps the process alive when the window is hidden
 app.on('window-all-closed', () => {})
 
-// Allow OS-level quit (shutdown, pkill) to bypass the hide intercept
-app.on('before-quit', () => { isQuitting = true })
+// Ensure the tray icon disappears for any quit path that goes through app.quit()
+app.on('before-quit', () => {
+  isQuitting = true
+  if (tray) { tray.destroy(); tray = null }
+})
 
-// Graceful exit on OS signals (e.g. pkill, systemd stop, taskbar "Quit")
-process.on('SIGTERM', () => { isQuitting = true; app.quit() })
-process.on('SIGINT',  () => { isQuitting = true; app.quit() })
+// OS signals (pkill, systemd stop) → use doQuit() for immediate, guaranteed exit
+process.on('SIGTERM', doQuit)
+process.on('SIGINT',  doQuit)
 
 // Single-instance: second launch focuses the existing window instead
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
