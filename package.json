@@ -45,7 +45,6 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.2",
     "electron": "^42.1.0",
     "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -61,5 +60,10 @@
     "jsdom": "^29.1.1",
     "vite": "^8.0.12",
     "vitest": "^4.1.6"
+  },
+  "overrides": {
+    "node-hid": {
+      "node-addon-api": "^8.0.0"
+    }
   }
 }
