@@ -1,0 +1,73 @@
+name: CI — Test & Build Linux DEB
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  # ─── Job 1: Run all unit tests ────────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:run
+
+  # ─── Job 2: Build the .deb installer (only runs when all tests pass) ──────────
+  build:
+    name: Build Linux DEB
+    runs-on: ubuntu-22.04
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # System libraries required to compile native modules:
+      #   node-hid  → libudev-dev + libusb-1.0-0-dev
+      #   sharp     → bundles its own libvips; only needs a C++ toolchain
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libudev-dev \
+            libusb-1.0-0-dev \
+            build-essential \
+            python3
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build renderer (Vite)
+        run: npm run build
+
+      - name: Package Linux DEB
+        run: npx electron-builder --linux deb --publish=never
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tech-stack-streamdeck-linux-deb
+          path: dist-electron/*.deb
+          if-no-files-found: error
+          retention-days: 30
