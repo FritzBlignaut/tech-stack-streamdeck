@@ -27,6 +27,7 @@ The **official Elgato Stream Deck software does not support Linux**. This projec
 - [Installation](#installation)
 - [Running the App](#running-the-app)
 - [USB Permissions (udev)](#usb-permissions-udev)
+- [Plugin Setup](#plugin-setup)
 - [Gotchas & Known Limitations](#gotchas--known-limitations)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
@@ -69,16 +70,21 @@ The **official Elgato Stream Deck software does not support Linux**. This projec
 - Brightness control for sleep/wake.
 - Flash feedback on button press (blue circle).
 
+### Plugins
+| Plugin | Actions / modes | Requires |
+|--------|----------------|----------|
+| **Volume** | Raise, Lower, Mute toggle, Live display (shows % and mute state) | `pactl` |
+| **Media Control** | Play/Pause, Next, Previous, Stop, Live track-info display | `playerctl` |
+| **Clock / Date** | Live clock on a button with a configurable format string (`HH:MM`, `DD/MM`, etc.) | — |
+| **CPU / RAM** | Live CPU% and RAM% display, updating every 2 s | — |
+| **OBS Studio** | Toggle recording, Toggle stream, Pause/resume recording, Switch scene (picks scene from a live dropdown when OBS is connected) | OBS WebSocket |
+
+All plugin buttons respect a custom icon or title — if you set one, it overrides the default dynamic display.
+
 ---
 
 ## What It Cannot Do (Yet)
 
-The following are planned for Phase 5 but are **not yet implemented**:
-
-- **OBS integration** — no WebSocket support yet.
-- **Spotify / media control** — no `playerctl` integration yet.
-- **Volume control** — no `pactl` integration yet.
-- **Dynamic / live buttons** — no clock, CPU, or RAM display buttons yet (buttons are static until you change them manually).
 - **Windows / macOS support** — untested and likely broken (`xdotool`, `xdg-open`, and udev are Linux-specific).
 - **Non-Original V2 models** — only the Stream Deck Original V2 (5×3) has been tested. Other models (Mini, XL, MK.2, +) may work but are untested.
 
@@ -103,8 +109,36 @@ These must be installed and available on your `$PATH`:
 | `xdotool` | Hotkey simulation | `sudo apt install xdotool` |
 | `xdg-open` | Open URLs and applications | Pre-installed on most desktop distros |
 | `gtk-launch` | Launch `.desktop` apps by ID | Pre-installed with GTK (standard on GNOME/Cinnamon) |
+| `pactl` | Volume control (PulseAudio / PipeWire) | `sudo apt install pulseaudio-utils` (usually pre-installed) |
+| `playerctl` | Media control via MPRIS | `sudo apt install playerctl` |
 
-> **Note:** If `xdotool` is not installed, the **Hotkey** action will silently fail with no error shown in the UI.
+> **Note:** If `xdotool` or `playerctl` are not installed, their respective actions will silently do nothing. `pactl` is included with most PulseAudio/PipeWire desktop setups.
+
+---
+
+## Plugin Setup
+
+### Volume (`pactl`)
+No setup needed beyond having `pactl` installed. Buttons target `@DEFAULT_SINK@` by default, which follows your system default audio output. You can override the sink name in the button settings.
+
+### Media Control (`playerctl`)
+Install `playerctl` and ensure your media player exposes an MPRIS D-Bus interface (most Linux players do: Spotify, Firefox, VLC, Rhythmbox, etc.).
+
+```bash
+sudo apt install playerctl
+
+# Verify a player is visible:
+playerctl -l
+```
+
+Buttons can target a specific player name or use `%any` (default) to control whatever is currently active.
+
+### OBS Studio
+1. Open OBS → **Tools → WebSocket Server Settings**
+2. Enable the WebSocket server (default port **4455**, no password required by default)
+3. The app auto-connects on startup and reconnects every 5 s if OBS is not running
+
+The **Switch scene** action populates a live scene dropdown automatically when OBS is connected.
 
 ---
 
@@ -186,6 +220,9 @@ sudo udevadm trigger
 | 8 | **Profile files are plain JSON** | Stored in `~/.config/tech-stack-streamdeck/`. Manual editing is possible, but the app does not validate the schema on load — a malformed file can silently result in blank buttons. |
 | 9 | **Window close button hides, not quits** | By design — it hides to the system tray. Use the tray icon → **Quit** to fully exit the application. |
 | 10 | **Flatpak app IDs with `gtk-launch`** | Flatpak `.desktop` IDs (e.g. `com.obsproject.Studio`) work with the default `gtk-launch` mode in Open Application. Use **Direct** mode only for native binary paths. |
+| 11 | **`playerctl` is not bundled** | Must be installed separately via `apt`. Media control buttons silently do nothing if it is missing. Run `playerctl -l` to verify your player is visible. |
+| 12 | **OBS WebSocket must be enabled** | OBS does not enable its WebSocket server by default. Go to **Tools → WebSocket Server Settings** in OBS and turn it on. Without it, OBS buttons show "OBS OFF". |
+| 13 | **Volume sink name** | The default `@DEFAULT_SINK@` tracks your system default output. If you use a specific audio device, enter its exact sink name (check `pactl list short sinks`) in the Volume button settings. |
 
 ---
 
@@ -199,6 +236,9 @@ sudo udevadm trigger
 | GIF decoding | [gifuct-js](https://github.com/matt-way/gifuct-js) 2 |
 | Native USB | [node-hid](https://github.com/node-hid/node-hid) (via `@elgato-stream-deck/node`) |
 | Hotkeys | `xdotool` (system dependency) |
+| OBS integration | [obs-websocket-js](https://github.com/obs-websocket-community-projects/obs-websocket-js) 5 |
+| Media control | `playerctl` (system dependency) |
+| Volume control | `pactl` (system dependency) |
 | Styling | Plain CSS (no framework) |
 
 ---
@@ -233,7 +273,7 @@ tech-stack-streamdeck/
 - [x] Phase 2 — Full UI, profiles, hardware icon drawing
 - [x] Phase 3 — Actions: Hotkey, Open Application, Open URL, Run Command, Multi Action, Switch Profile
 - [x] Phase 4 — Polish: drag-and-drop, context menu, pages, folders, animated icons, system tray, auto-reconnect
-- [ ] Phase 5 — Built-in plugins: OBS, Spotify/media, volume, clock, CPU/RAM
+- [x] Phase 5 — Built-in plugins: OBS Studio (record/stream/switch-scene), media control (playerctl/MPRIS), volume (pactl), clock/date, CPU/RAM
 
 ---
 
@@ -244,9 +284,3 @@ This project is private and unlicensed. All rights reserved.
 ---
 
 **Trademark notice:** Elgato and Stream Deck are registered trademarks of Corsair Gaming, Inc. This project is not affiliated with, endorsed by, or associated with Corsair or Elgato in any way. The trademarks are used solely to identify the hardware this software is compatible with.
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
