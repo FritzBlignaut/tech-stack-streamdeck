@@ -1543,6 +1543,12 @@ export default function App() {
   const [profiles,      setProfiles]      = useState(['Default Profile'])
   const [livePreviews,  setLivePreviews]  = useState({})   // canvas snapshots for dynamic buttons
   const [obsScenes,     setObsScenes]     = useState([])    // scene names fetched from OBS
+  const [appVersion,    setAppVersion]    = useState('')
+
+  // Fetch app version once on mount
+  useEffect(() => {
+    window.streamDeck?.getAppVersion().then(v => { if (v) setAppVersion(v) })
+  }, [])
 
   // Visible button configs — current page at current folder depth (derived)
   const buttonConfigs = getButtonsAt(pages, currentPage, folderPath)
@@ -2436,6 +2442,7 @@ export default function App() {
               <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.27 1.27M11.33 11.33l1.27 1.27M3.4 12.6l1.27-1.27M11.33 4.67l1.27-1.27" />
             </svg>
           </button>
+          {appVersion && <span className="app-version">v{appVersion}</span>}
         </div>
       </header>
 

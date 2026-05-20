@@ -81,7 +81,7 @@ function createTray() {
   const menu = Menu.buildFromTemplate([
     { label: 'Show Window', click: () => { mainWindow?.show(); mainWindow?.focus() } },
     { type: 'separator' },
-    { label: 'Quit',        click: () => { isQuitting = true; app.quit() } },
+    { label: 'Quit',        click: () => { isQuitting = true; if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy(); app.quit() } },
   ])
   tray.setContextMenu(menu)
   // Left-click shows window (works on Windows/KDE; GNOME AppIndicator ignores it)
@@ -135,9 +135,13 @@ function createWindow() {
     },
   })
 
-  // Dev: load from Vite dev server — respect VITE_PORT env var set by npm run electron:dev
-  const port = process.env.VITE_PORT || '5173'
-  mainWindow.loadURL(`http://localhost:${port}`)
+  // Production: load the packaged renderer; dev: load from the Vite dev server
+  if (app.isPackaged) {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+  } else {
+    const port = process.env.VITE_PORT || '5173'
+    mainWindow.loadURL(`http://localhost:${port}`)
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -249,6 +253,8 @@ function registerIpcHandlers() {
       return names.length ? names : ['Default Profile']
     } catch { return ['Default Profile'] }
   })
+
+  ipcMain.handle('app:get-version', () => app.getVersion())
 
   ipcMain.handle('profile:get-active', async () => activeProfileName)
 
@@ -561,6 +567,10 @@ app.on('window-all-closed', () => {})
 
 // Allow OS-level quit (shutdown, pkill) to bypass the hide intercept
 app.on('before-quit', () => { isQuitting = true })
+
+// Graceful exit on OS signals (e.g. pkill, systemd stop, taskbar "Quit")
+process.on('SIGTERM', () => { isQuitting = true; app.quit() })
+process.on('SIGINT',  () => { isQuitting = true; app.quit() })
 
 // Single-instance: second launch focuses the existing window instead
 const gotSingleInstanceLock = app.requestSingleInstanceLock()

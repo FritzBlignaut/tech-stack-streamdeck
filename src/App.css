@@ -270,6 +270,14 @@
   color: #bbb;
 }
 
+.app-version {
+  font-size: 11px;
+  color: #3a3a3a;
+  letter-spacing: 0.03em;
+  padding: 0 2px;
+  user-select: text;
+}
+
 /* ─── Workspace ──────────────────────────────────────────── */
 .workspace {
   display: flex;
