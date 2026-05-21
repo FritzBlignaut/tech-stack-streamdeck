@@ -149,32 +149,66 @@ The **Switch scene** action populates a live scene dropdown automatically when O
 git clone https://github.com/your-username/tech-stack-streamdeck.git
 cd tech-stack-streamdeck
 
-# 2. Install dependencies
+# 2. Install system build dependencies (required to compile node-hid)
+sudo apt install libudev-dev libusb-1.0-0-dev build-essential
+
+# 3. Install Node dependencies
 npm install
 
-# 3. Rebuild native modules for Electron
+# 4. Rebuild native modules for Electron
 npm run rebuild
 
-# 4. Build the renderer
+# 5. Build the renderer
 npm run build
 ```
 
-> **Step 3 is mandatory.** `node-hid` (the USB library that talks to the Stream Deck) is a native Node module and must be compiled against the specific version of Electron you are using. Skipping this step will result in a "Could not load module" error on startup.
+> **Step 2 is required.** `node-hid` compiles a native binding (`binding.gyp`) that links against `libudev`. Without the `-dev` headers the build fails with `fatal error: libudev.h: No such file or directory`.
+
+> **Step 4 is mandatory.** `node-hid` must be compiled against the specific version of Electron you are using. Skipping this step will result in a "Could not load module" error on startup.
+
+### libudev version conflict (Ubuntu 24.04 / Mint 22.x)
+
+If `sudo apt install libudev-dev` fails with _"has unmet dependencies — libudev1 (= x.y) but x.z is to be installed"_, your installed `libudev1` is newer than what the package index offers. Workaround — extract only the header and linker symlink without touching the runtime:
+
+```bash
+cd /tmp
+apt-get download libudev-dev
+dpkg -x libudev-dev_*.deb libudev-extracted
+sudo cp libudev-extracted/usr/include/libudev.h /usr/local/include/
+sudo ln -sf /usr/lib/x86_64-linux-gnu/libudev.so.1 /usr/local/lib/libudev.so
+rm -rf libudev-extracted libudev-dev_*.deb
+```
+
+This is a one-time setup. The build toolchain finds the header and symlink in `/usr/local/` without downgrading any system packages.
 
 ---
 
 ## Running the App
 
 ```bash
-# Production mode (requires a completed build)
-npx electron .
-```
-
-```bash
 # Dev mode — hot-reloading renderer + Electron (run in two separate terminals)
 npm run dev           # terminal 1: starts the Vite dev server
 npm run electron:dev  # terminal 2: starts Electron pointed at the dev server
 ```
+
+### Testing the packaged build locally
+
+Before pushing to `develop` and waiting for CI, you can test the exact same behaviour as the installed `.deb` directly on your machine:
+
+```bash
+npm run test:local
+```
+
+This runs `vite build` followed by `electron-builder --linux dir`, which produces an unpacked binary at `dist-electron/linux-unpacked/` and immediately launches it. Unlike dev mode, this sets `app.isPackaged = true`, loads assets via `file://`, runs the asar-packed bundle, and rebuilds native modules for the target Electron version — identical to what gets installed from the `.deb`.
+
+If you only want to build without launching:
+
+```bash
+npm run package:local
+./dist-electron/linux-unpacked/tech-stack-streamdeck
+```
+
+Add `--no-sandbox` if Electron complains about sandboxing on your system.
 
 ---
 
@@ -219,6 +253,7 @@ sudo udevadm trigger
 | 7 | **GIF performance on large files** | Animated GIFs are decoded fully in-memory on the renderer thread. Very large GIFs (many frames or high source resolution) may cause a brief UI stall during the initial decode. |
 | 8 | **Profile files are plain JSON** | Stored in `~/.config/tech-stack-streamdeck/`. Manual editing is possible, but the app does not validate the schema on load — a malformed file can silently result in blank buttons. |
 | 9 | **Window close button hides, not quits** | By design — it hides to the system tray. Use the tray icon → **Quit** to fully exit the application. |
+| 14 | **`libudev-dev` version conflict** | On Ubuntu 24.04 / Mint 22.x, `libudev1` is sometimes at a newer patch version than what the package index offers, causing `apt install libudev-dev` to fail with unmet dependencies. See the [workaround in Installation](#libudev-version-conflict-ubuntu-2404--mint-22x) — it extracts only the header and linker symlink without downgrading any system packages. |
 | 10 | **Flatpak app IDs with `gtk-launch`** | Flatpak `.desktop` IDs (e.g. `com.obsproject.Studio`) work with the default `gtk-launch` mode in Open Application. Use **Direct** mode only for native binary paths. |
 | 11 | **`playerctl` is not bundled** | Must be installed separately via `apt`. Media control buttons silently do nothing if it is missing. Run `playerctl -l` to verify your player is visible. |
 | 12 | **OBS WebSocket must be enabled** | OBS does not enable its WebSocket server by default. Go to **Tools → WebSocket Server Settings** in OBS and turn it on. Without it, OBS buttons show "OBS OFF". |
@@ -257,13 +292,22 @@ tech-stack-streamdeck/
 ├── public/
 │   └── tech_stack_streamdeck.png
 ├── .github/
-│   └── plans/
-│       ├── plan.md       # Phase-by-phase build plan
-│       └── context.md    # Full technical context reference
+│   └── workflows/
+│       └── ci.yml        # CI pipeline — runs tests then builds .deb on develop branch pushes
 ├── dist/                 # Built renderer output (generated — do not commit)
+├── dist-electron/        # Packaged app output (generated — do not commit)
 ├── package.json
 └── vite.config.js
 ```
+
+### CI / Releasing
+
+Pushing to the `develop` branch triggers the GitHub Actions workflow in `.github/workflows/ci.yml`. It:
+1. Runs all unit tests (`npm run test:run`)
+2. Builds the renderer and packages a `.deb` if all tests pass
+3. Uploads the `.deb` as a build artifact (retained for 7 days)
+
+Before pushing to `develop`, validate packaged behaviour locally with `npm run test:local` to avoid redundant CI runs.
 
 ---
 

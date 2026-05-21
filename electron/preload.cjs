@@ -42,4 +42,12 @@ contextBridge.exposeInMainWorld('streamDeck', {
 
   // App metadata
   getAppVersion: () => ipcRenderer.invoke('app:get-version'),
+
+  // Plugin system
+  listPlugins:     ()                                              => ipcRenderer.invoke('plugins:list'),
+  browsePluginDir: ()                                              => ipcRenderer.invoke('plugins:browse-dir'),
+  installPlugin:   (sourcePath)                                    => ipcRenderer.invoke('plugins:install',  { sourcePath }),
+  uninstallPlugin: (uuid)                                          => ipcRenderer.invoke('plugins:uninstall', { uuid }),
+  sendToPlugin:    (pluginUUID, actionUUID, event, settings, ctx)  => ipcRenderer.invoke('plugin:send', { pluginUUID, actionUUID, event, settings, context: ctx }),
+  onPluginMessage: (cb) => { const wrap = (_, d) => cb(d); ipcRenderer.on('plugin:message', wrap); return () => ipcRenderer.removeListener('plugin:message', wrap) },
 })
