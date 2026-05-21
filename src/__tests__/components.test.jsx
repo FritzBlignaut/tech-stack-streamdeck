@@ -167,73 +167,60 @@ describe('ButtonGrid', () => {
 // ─── ActionSection — OBS ─────────────────────────────────────────────────────
 
 describe('ActionSection — OBS action', () => {
-  const obsAction = { type: 'obs', operation: 'toggle-record' }
   const noop = () => {}
 
-  it('renders the OBS Studio action chip', () => {
-    render(<ActionSection action={obsAction} onChange={noop} />)
-    expect(screen.getByText('OBS Studio')).toBeInTheDocument()
+  it('renders the OBS record chip with label "Record"', () => {
+    render(<ActionSection action={{ type: 'obs-record' }} onChange={noop} />)
+    expect(screen.getByText('Record')).toBeInTheDocument()
   })
 
-  it('renders the operation select dropdown', () => {
-    render(<ActionSection action={obsAction} onChange={noop} />)
-    expect(screen.getByDisplayValue('Toggle record')).toBeInTheDocument()
+  it('renders an action hint for obs-record', () => {
+    render(<ActionSection action={{ type: 'obs-record' }} onChange={noop} />)
+    expect(screen.getByText(/toggles OBS recording/i)).toBeInTheDocument()
   })
 
-  it('does not show the scene picker when operation is not switch-scene', () => {
-    render(<ActionSection action={obsAction} onChange={noop} />)
-    expect(screen.queryByText('Scene name')).not.toBeInTheDocument()
+  it('does not show a scene picker for obs-record', () => {
+    render(<ActionSection action={{ type: 'obs-record' }} onChange={noop} />)
+    expect(screen.queryByPlaceholderText(/connect OBS to pick/i)).not.toBeInTheDocument()
   })
 
-  it('shows a text input for scene name when operation=switch-scene and obsScenes=[]', () => {
-    const action = { type: 'obs', operation: 'switch-scene', sceneName: '' }
+  it('shows a text input for scene name when action=obs-scene and obsScenes=[]', () => {
+    const action = { type: 'obs-scene', sceneName: '' }
     render(<ActionSection action={action} onChange={noop} obsScenes={[]} />)
-    expect(screen.getByText('Scene name')).toBeInTheDocument()
-    // should render an <input type="text">, not a <select>
     expect(screen.getByPlaceholderText(/connect OBS to pick/i)).toBeInTheDocument()
   })
 
-  it('shows a <select> dropdown when obsScenes has entries', () => {
-    const action = { type: 'obs', operation: 'switch-scene', sceneName: 'Gaming' }
+  it('shows a <select> dropdown when action=obs-scene and obsScenes has entries', () => {
+    const action = { type: 'obs-scene', sceneName: 'Gaming' }
     const scenes = ['Gaming', 'Just Chatting', 'BRB']
     render(<ActionSection action={action} onChange={noop} obsScenes={scenes} />)
 
-    const selects = screen.getAllByRole('combobox')
-    // The last select should be the scene picker
-    const scenePicker = selects[selects.length - 1]
+    const scenePicker = screen.getByRole('combobox')
     expect(scenePicker).toBeInTheDocument()
     expect(screen.getByText('Gaming')).toBeInTheDocument()
     expect(screen.getByText('Just Chatting')).toBeInTheDocument()
     expect(screen.getByText('BRB')).toBeInTheDocument()
   })
 
-  it('includes all four OBS operations in the select', () => {
-    render(<ActionSection action={obsAction} onChange={noop} />)
-    const select = screen.getByRole('combobox')
-    const options = [...select.querySelectorAll('option')].map(o => o.value)
-    expect(options).toContain('toggle-record')
-    expect(options).toContain('toggle-stream')
-    expect(options).toContain('toggle-pause-record')
-    expect(options).toContain('switch-scene')
-  })
-
-  it('calls onChange with updated operation when user selects one', () => {
+  it('calls onChange with updated sceneName when user picks a scene', () => {
     const onChange = vi.fn()
-    render(<ActionSection action={obsAction} onChange={onChange} />)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'toggle-stream' } })
+    const action = { type: 'obs-scene', sceneName: 'Gaming' }
+    const scenes = ['Gaming', 'Just Chatting', 'BRB']
+    render(<ActionSection action={action} onChange={onChange} obsScenes={scenes} />)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'BRB' } })
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ action: expect.objectContaining({ operation: 'toggle-stream' }) })
+      expect.objectContaining({ action: expect.objectContaining({ sceneName: 'BRB' }) })
     )
   })
 
-  it('renders the remove button', () => {
-    render(<ActionSection action={obsAction} onChange={noop} />)
+  it('renders the remove button for obs-record', () => {
+    render(<ActionSection action={{ type: 'obs-record' }} onChange={noop} />)
     expect(screen.getByTitle('Remove action')).toBeInTheDocument()
   })
 
   it('calls onChange with action:null when remove button is clicked', () => {
     const onChange = vi.fn()
-    render(<ActionSection action={obsAction} onChange={onChange} />)
+    render(<ActionSection action={{ type: 'obs-record' }} onChange={onChange} />)
     fireEvent.click(screen.getByTitle('Remove action'))
     expect(onChange).toHaveBeenCalledWith({ action: null })
   })

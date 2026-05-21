@@ -24,3 +24,11 @@ applyTo: "**"
 6. Capture any user corrections in this file immediately.
 
 **The predictability contract:** The user relies on this workflow being executed identically every time so they can trust and expand on it. Deviating silently — even when the implementation seems straightforward — breaks that contract.
+
+## 2026-05-21 — Always keep unit tests in sync with component API changes
+
+**Mistake:** Refactored OBS action types from a generic `{ type: 'obs', operation: '...' }` to discrete types (`obs-record`, `obs-scene`, etc.) without updating the unit tests in `src/__tests__/components.test.jsx`. This caused 8 test failures in CI.
+
+**Rule:** Whenever a component's rendered output, props, or action API changes, immediately update the corresponding tests **in the same change**. Never ship a feature without running `npx vitest run` and confirming all tests pass. If tests were written against an old API, rewrite them to match the current API — do not delete them without replacement.
+
+**Checklist addition:** After every non-trivial code change, explicitly run `npx vitest run` as a step in the workflow — not just `npx vite build`.
