@@ -1229,6 +1229,23 @@
   padding: 4px;
 }
 
+.action-category-header {
+  padding: 6px 9px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #555;
+  pointer-events: none;
+  user-select: none;
+}
+
+.action-category-header:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid #2a2a2a;
+  padding-top: 8px;
+}
+
 .action-type-item {
   display: flex;
   align-items: center;

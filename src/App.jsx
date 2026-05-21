@@ -130,7 +130,28 @@ const ACTION_CATEGORIES = [
       { id: 'system-monitor', name: 'CPU / RAM',       icon: '📊' },
       { id: 'volume',         name: 'Volume',          icon: '🔊' },
       { id: 'media',          name: 'Media Control',   icon: '🎵' },
-      { id: 'obs',            name: 'OBS Studio',      icon: '🟣' },
+    ],
+  },
+  {
+    id: 'obs',
+    name: 'OBS Studio',
+    actions: [
+      { id: 'obs-record',           name: 'Record',           icon: '⏺' },
+      { id: 'obs-record-pause',     name: 'Pause Recording',  icon: '⏸' },
+      { id: 'obs-stream',           name: 'Stream',           icon: '📡' },
+      { id: 'obs-replay-buffer',    name: 'Replay Buffer',    icon: '⏮' },
+      { id: 'obs-save-replay',      name: 'Save Replay',      icon: '💾' },
+      { id: 'obs-scene',            name: 'Scene',            icon: '🎬' },
+      { id: 'obs-scene-collection', name: 'Scene Collection', icon: '📁' },
+      { id: 'obs-source',           name: 'Source Visibility',icon: '👁' },
+      { id: 'obs-mute',             name: 'Mute',             icon: '🔇' },
+      { id: 'obs-media',            name: 'Media Control',    icon: '🎞' },
+      { id: 'obs-studio-mode',      name: 'Studio Mode',      icon: '🖥' },
+      { id: 'obs-preview-scene',    name: 'Push to Program',  icon: '▶' },
+      { id: 'obs-filter',           name: 'Source Filter',    icon: '🔧' },
+      { id: 'obs-screenshot',       name: 'Screenshot',       icon: '📷' },
+      { id: 'obs-transition',       name: 'Transition',       icon: '⇢' },
+      { id: 'obs-chapter-marker',   name: 'Chapter Marker',   icon: '🔖' },
     ],
   },
 ]
@@ -747,7 +768,7 @@ function MultiActionEditor({ actions, onChange }) {
 }
 
 // ─── Action Picker ───────────────────────────────────────────
-const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile', 'page-switcher', 'create-folder', 'back-folder', 'clock', 'system-monitor', 'volume', 'media', 'obs'])
+const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 'sleep-toggle', 'multi-action', 'switch-profile', 'page-switcher', 'create-folder', 'back-folder', 'clock', 'system-monitor', 'volume', 'media', 'obs-record', 'obs-record-pause', 'obs-stream', 'obs-replay-buffer', 'obs-save-replay', 'obs-scene', 'obs-scene-collection', 'obs-source', 'obs-mute', 'obs-media', 'obs-studio-mode', 'obs-preview-scene', 'obs-filter', 'obs-screenshot', 'obs-transition', 'obs-chapter-marker'])
 
 // Sub-action types available inside a Multi Action (no nesting)
 const SUB_ACTION_TYPES = [
@@ -785,7 +806,23 @@ const ACTION_DEFAULTS = {
   'system-monitor': { type: 'system-monitor', bgColor: '#000000', textColor: '#00ff88', showCpu: true, showRam: true },
   'volume':         { type: 'volume',         operation: 'display-only', step: 5, sink: '@DEFAULT_SINK@', bgColor: '#000000', textColor: '#00aaff' },
   'media':          { type: 'media',          command: 'play-pause', player: '%any', bgColor: '#000000', textColor: '#ffffff' },
-  'obs':            { type: 'obs',            operation: 'toggle-record', bgColor: '#000000' },
+  // OBS Studio
+  'obs-record':           { type: 'obs-record' },
+  'obs-record-pause':     { type: 'obs-record-pause' },
+  'obs-stream':           { type: 'obs-stream' },
+  'obs-replay-buffer':    { type: 'obs-replay-buffer' },
+  'obs-save-replay':      { type: 'obs-save-replay' },
+  'obs-scene':            { type: 'obs-scene',            sceneName: '' },
+  'obs-scene-collection': { type: 'obs-scene-collection', collectionName: '' },
+  'obs-source':           { type: 'obs-source',           sceneName: '', sceneItemId: null, sourceName: '' },
+  'obs-mute':             { type: 'obs-mute',             inputName: '' },
+  'obs-media':            { type: 'obs-media',            inputName: '', mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE' },
+  'obs-studio-mode':      { type: 'obs-studio-mode' },
+  'obs-preview-scene':    { type: 'obs-preview-scene' },
+  'obs-filter':           { type: 'obs-filter',           sourceName: '', filterName: '' },
+  'obs-screenshot':       { type: 'obs-screenshot',       sourceName: '', imageFilePath: '' },
+  'obs-transition':       { type: 'obs-transition',       transitionName: '' },
+  'obs-chapter-marker':   { type: 'obs-chapter-marker',  captionText: '' },
 }
 
 // Dispatches a single leaf action — returns a Promise
@@ -800,7 +837,7 @@ function dispatchSubAction(sd, act) {
   return Promise.resolve()
 }
 
-export function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder, obsScenes = [] }) {
+export function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder, obsScenes = [], obsInputs = [], obsTransitions = [], obsSceneCollections = [] }) {
   const [picking, setPicking] = useState(false)
 
   // ── assigned: folder ──
@@ -1246,52 +1283,308 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
     )
   }
 
-  // ── assigned: obs ──
-  if (action?.type === 'obs') {
+  // ── OBS: shared chip helper ──
+  const obsChip = (label) => (
+    <div className="action-chip">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+        <circle cx="8" cy="8" r="6.5" />
+        <circle cx="8" cy="8" r="3" fill="currentColor" stroke="none" />
+      </svg>
+      <span>{label}</span>
+      <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+          <path d="M1 1l10 10M11 1L1 11" />
+        </svg>
+      </button>
+    </div>
+  )
+  const obsHint = <p className="action-hint">Auto-connects to OBS at localhost:4455. Enable WebSocket in OBS → Tools → WebSocket Server Settings.</p>
+
+  // ── assigned: obs-record ──
+  if (action?.type === 'obs-record') {
     return (
       <div className="assigned-action">
-        <div className="action-chip">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
-            <circle cx="8" cy="8" r="6.5" />
-            <circle cx="8" cy="8" r="3" fill="currentColor" stroke="none" />
-          </svg>
-          <span>OBS Studio</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
-        </div>
-        <span className="prop-label-sm">Action on press</span>
-        <select className="prop-input" value={action.operation ?? 'toggle-record'}
-          onChange={e => onChange({ action: { ...action, operation: e.target.value } })}>
-          <option value="toggle-record">Toggle record</option>
-          <option value="toggle-stream">Toggle stream</option>
-          <option value="toggle-pause-record">Pause / resume recording</option>
-          <option value="switch-scene">Switch scene</option>
+        {obsChip('Record')}
+        <p className="action-hint">Toggles OBS recording on / off when pressed.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-record-pause ──
+  if (action?.type === 'obs-record-pause') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Pause Recording')}
+        <p className="action-hint">Pauses or resumes an active OBS recording.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-stream ──
+  if (action?.type === 'obs-stream') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Stream')}
+        <p className="action-hint">Starts or stops the OBS stream when pressed.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-replay-buffer ──
+  if (action?.type === 'obs-replay-buffer') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Replay Buffer')}
+        <p className="action-hint">Starts or stops the OBS replay buffer.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-save-replay ──
+  if (action?.type === 'obs-save-replay') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Save Replay')}
+        <p className="action-hint">Saves the current replay buffer to disk.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-studio-mode ──
+  if (action?.type === 'obs-studio-mode') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Studio Mode')}
+        <p className="action-hint">Toggles OBS Studio Mode on / off.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-preview-scene ──
+  if (action?.type === 'obs-preview-scene') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Push to Program')}
+        <p className="action-hint">Pushes the current preview scene to program (Studio Mode only).</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-scene ──
+  if (action?.type === 'obs-scene') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Scene')}
+        <span className="prop-label-sm">Scene</span>
+        {obsScenes.length > 0
+          ? <select className="prop-input" value={action.sceneName ?? ''}
+              onChange={e => onChange({ action: { ...action, sceneName: e.target.value } })}>
+              <option value="">— select scene —</option>
+              {obsScenes.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          : <input className="prop-input" type="text" placeholder="Scene name (connect OBS to pick)"
+              value={action.sceneName ?? ''}
+              onChange={e => onChange({ action: { ...action, sceneName: e.target.value } })} />
+        }
+        <p className="action-hint">Switches OBS to this scene when pressed.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-scene-collection ──
+  if (action?.type === 'obs-scene-collection') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Scene Collection')}
+        <span className="prop-label-sm">Scene Collection</span>
+        {obsSceneCollections.length > 0
+          ? <select className="prop-input" value={action.collectionName ?? ''}
+              onChange={e => onChange({ action: { ...action, collectionName: e.target.value } })}>
+              <option value="">— select collection —</option>
+              {obsSceneCollections.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          : <input className="prop-input" type="text" placeholder="Collection name (connect OBS to pick)"
+              value={action.collectionName ?? ''}
+              onChange={e => onChange({ action: { ...action, collectionName: e.target.value } })} />
+        }
+        <p className="action-hint">Switches to this scene collection when pressed.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-mute ──
+  if (action?.type === 'obs-mute') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Mute')}
+        <span className="prop-label-sm">Audio source</span>
+        {obsInputs.length > 0
+          ? <select className="prop-input" value={action.inputName ?? ''}
+              onChange={e => onChange({ action: { ...action, inputName: e.target.value } })}>
+              <option value="">— select source —</option>
+              {obsInputs.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          : <input className="prop-input" type="text" placeholder="Source name (connect OBS to pick)"
+              value={action.inputName ?? ''}
+              onChange={e => onChange({ action: { ...action, inputName: e.target.value } })} />
+        }
+        <p className="action-hint">Toggles mute on this audio source when pressed.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-media ──
+  if (action?.type === 'obs-media') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Media Control')}
+        <span className="prop-label-sm">Media source</span>
+        {obsInputs.length > 0
+          ? <select className="prop-input" value={action.inputName ?? ''}
+              onChange={e => onChange({ action: { ...action, inputName: e.target.value } })}>
+              <option value="">— select source —</option>
+              {obsInputs.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          : <input className="prop-input" type="text" placeholder="Media source name (connect OBS to pick)"
+              value={action.inputName ?? ''}
+              onChange={e => onChange({ action: { ...action, inputName: e.target.value } })} />
+        }
+        <span className="prop-label-sm">Action</span>
+        <select className="prop-input" value={action.mediaAction ?? 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE'}
+          onChange={e => onChange({ action: { ...action, mediaAction: e.target.value } })}>
+          <option value="OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY">Play</option>
+          <option value="OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE">Pause</option>
+          <option value="OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP">Stop</option>
+          <option value="OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART">Restart</option>
+          <option value="OBS_WEBSOCKET_MEDIA_INPUT_ACTION_NEXT">Next</option>
+          <option value="OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PREVIOUS">Previous</option>
         </select>
-        {action.operation === 'switch-scene' && (
-          <>
-            <span className="prop-label-sm">Scene name</span>
-            {obsScenes.length > 0 ? (
-              <select className="prop-input" value={action.sceneName ?? ''}
-                onChange={e => onChange({ action: { ...action, sceneName: e.target.value } })}>
-                <option value="">— select scene —</option>
-                {obsScenes.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            ) : (
-              <input className="prop-input" type="text" placeholder="e.g. Gaming (connect OBS to pick)"
-                value={action.sceneName ?? ''}
-                onChange={e => onChange({ action: { ...action, sceneName: e.target.value } })} />
-            )}
-          </>
-        )}
-        <div className="prop-row" style={{ marginTop: 8 }}>
-          <label className="prop-field-label">Background</label>
-          <input type="color" className="prop-color" value={action.bgColor ?? '#000000'}
-            onChange={e => onChange({ action: { ...action, bgColor: e.target.value } })} />
-        </div>
-        <p className="action-hint">Auto-connects to OBS at localhost:4455. Enable WebSocket in OBS → Tools → WebSocket Server Settings.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-source ──
+  if (action?.type === 'obs-source') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Source Visibility')}
+        <span className="prop-label-sm">Scene</span>
+        {obsScenes.length > 0
+          ? <select className="prop-input" value={action.sceneName ?? ''}
+              onChange={e => onChange({ action: { ...action, sceneName: e.target.value } })}>
+              <option value="">— select scene —</option>
+              {obsScenes.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          : <input className="prop-input" type="text" placeholder="Scene name (connect OBS to pick)"
+              value={action.sceneName ?? ''}
+              onChange={e => onChange({ action: { ...action, sceneName: e.target.value } })} />
+        }
+        <span className="prop-label-sm">Source name</span>
+        <input className="prop-input" type="text" placeholder="Exact source name in OBS"
+          value={action.sourceName ?? ''}
+          onChange={e => onChange({ action: { ...action, sourceName: e.target.value } })} />
+        <p className="action-hint">Toggles visibility of this source when pressed.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-filter ──
+  if (action?.type === 'obs-filter') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Source Filter')}
+        <span className="prop-label-sm">Source</span>
+        {obsInputs.length > 0
+          ? <select className="prop-input" value={action.sourceName ?? ''}
+              onChange={e => onChange({ action: { ...action, sourceName: e.target.value } })}>
+              <option value="">— select source —</option>
+              {obsInputs.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          : <input className="prop-input" type="text" placeholder="Source name (connect OBS to pick)"
+              value={action.sourceName ?? ''}
+              onChange={e => onChange({ action: { ...action, sourceName: e.target.value } })} />
+        }
+        <span className="prop-label-sm">Filter name</span>
+        <input className="prop-input" type="text" placeholder="Exact filter name in OBS"
+          value={action.filterName ?? ''}
+          onChange={e => onChange({ action: { ...action, filterName: e.target.value } })} />
+        <p className="action-hint">Toggles this filter on / off when pressed.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-screenshot ──
+  if (action?.type === 'obs-screenshot') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Screenshot')}
+        <span className="prop-label-sm">Source</span>
+        {obsInputs.length > 0
+          ? <select className="prop-input" value={action.sourceName ?? ''}
+              onChange={e => onChange({ action: { ...action, sourceName: e.target.value } })}>
+              <option value="">— select source —</option>
+              {obsInputs.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          : <input className="prop-input" type="text" placeholder="Source name (connect OBS to pick)"
+              value={action.sourceName ?? ''}
+              onChange={e => onChange({ action: { ...action, sourceName: e.target.value } })} />
+        }
+        <span className="prop-label-sm">Save to path</span>
+        <input className="prop-input" type="text" placeholder="/home/user/screenshot.png"
+          value={action.imageFilePath ?? ''}
+          onChange={e => onChange({ action: { ...action, imageFilePath: e.target.value } })} />
+        <p className="action-hint">Takes a screenshot of this source and saves it to the specified path.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-transition ──
+  if (action?.type === 'obs-transition') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Transition')}
+        <span className="prop-label-sm">Transition</span>
+        {obsTransitions.length > 0
+          ? <select className="prop-input" value={action.transitionName ?? ''}
+              onChange={e => onChange({ action: { ...action, transitionName: e.target.value } })}>
+              <option value="">— select transition —</option>
+              {obsTransitions.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          : <input className="prop-input" type="text" placeholder="Transition name (connect OBS to pick)"
+              value={action.transitionName ?? ''}
+              onChange={e => onChange({ action: { ...action, transitionName: e.target.value } })} />
+        }
+        <p className="action-hint">Sets this as the active scene transition when pressed.</p>
+        {obsHint}
+      </div>
+    )
+  }
+
+  // ── assigned: obs-chapter-marker ──
+  if (action?.type === 'obs-chapter-marker') {
+    return (
+      <div className="assigned-action">
+        {obsChip('Chapter Marker')}
+        <span className="prop-label-sm">Caption text</span>
+        <input className="prop-input" type="text" placeholder="e.g. Chapter 1"
+          value={action.captionText ?? ''}
+          onChange={e => onChange({ action: { ...action, captionText: e.target.value } })} />
+        <p className="action-hint">Inserts a caption/chapter marker into the active recording.</p>
+        {obsHint}
       </div>
     )
   }
@@ -1301,49 +1594,25 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
     <div className="unassigned-action">
       {picking ? (
         <div className="action-type-list">
-          {ACTION_CATEGORIES.flatMap(cat => cat.actions).map(a => (
-            <button
-              key={a.id}
-              className={`action-type-item${!ENABLED_ACTIONS.has(a.id) ? ' disabled' : ''}`}
-              onClick={() => {
-                if (!ENABLED_ACTIONS.has(a.id)) return
-                const defaults = a.id === 'hotkey'
-                  ? { type: 'hotkey', keys: '' }
-                  : a.id === 'sleep-toggle'
-                  ? { type: 'sleep-toggle' }
-                  : a.id === 'open-url'
-                  ? { type: 'open-url', url: '' }
-                  : a.id === 'run-cmd'
-                  ? { type: 'run-cmd', command: '' }
-                  : a.id === 'multi-action'
-                  ? { type: 'multi-action', actions: [] }
-                  : a.id === 'switch-profile'
-                  ? { type: 'switch-profile', profileName: '' }
-                  : a.id === 'page-switcher'
-                  ? { type: 'page-switcher', targetPage: 0 }
-                  : a.id === 'create-folder'
-                  ? { type: 'folder', buttons: {} }
-                  : a.id === 'back-folder'
-                  ? { type: 'back-folder' }
-                  : a.id === 'clock'
-                  ? { type: 'clock', format: 'HH:MM', bgColor: '#000000', textColor: '#ffffff' }
-                  : a.id === 'system-monitor'
-                  ? { type: 'system-monitor', bgColor: '#000000', textColor: '#00ff88', showCpu: true, showRam: true }
-                  : a.id === 'volume'
-                  ? { type: 'volume', operation: 'display-only', step: 5, sink: '@DEFAULT_SINK@', bgColor: '#000000', textColor: '#00aaff' }
-                  : a.id === 'media'
-                  ? { type: 'media', command: 'play-pause', player: '%any', bgColor: '#000000', textColor: '#ffffff' }
-                  : a.id === 'obs'
-                  ? { type: 'obs', operation: 'toggle-record', bgColor: '#000000' }
-                  : { type: 'open-app', target: '', mode: 'gtk-launch' }
-                onChange({ action: defaults })
-                setPicking(false)
-              }}
-            >
-              <span className="action-type-icon">{a.icon}</span>
-              <span>{a.name}</span>
-              {!ENABLED_ACTIONS.has(a.id) && <span className="action-type-soon">soon</span>}
-            </button>
+          {ACTION_CATEGORIES.map(cat => (
+            <div key={cat.id}>
+              <div className="action-category-header">{cat.name}</div>
+              {cat.actions.map(a => (
+                <button
+                  key={a.id}
+                  className={`action-type-item${!ENABLED_ACTIONS.has(a.id) ? ' disabled' : ''}`}
+                  onClick={() => {
+                    if (!ENABLED_ACTIONS.has(a.id)) return
+                    onChange({ action: ACTION_DEFAULTS[a.id] ?? { type: a.id } })
+                    setPicking(false)
+                  }}
+                >
+                  <span className="action-type-icon">{a.icon}</span>
+                  <span>{a.name}</span>
+                  {!ENABLED_ACTIONS.has(a.id) && <span className="action-type-soon">soon</span>}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       ) : (
@@ -1359,7 +1628,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
   )
 }
 
-function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder, obsScenes = [] }) {
+function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder, obsScenes = [], obsInputs = [], obsTransitions = [], obsSceneCollections = [] }) {
   const fileInputRef        = useRef(null)
   const pressedFileInputRef = useRef(null)
   const [libraryTarget, setLibraryTarget] = useState(null) // 'default' | 'pressed' | null
@@ -1403,7 +1672,7 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
       <div className="properties-body">
         <div className="prop-section">
           <span className="prop-label">Action</span>
-          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} onEnterFolder={onEnterFolder} obsScenes={obsScenes} />
+          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} onEnterFolder={onEnterFolder} obsScenes={obsScenes} obsInputs={obsInputs} obsTransitions={obsTransitions} obsSceneCollections={obsSceneCollections} />
         </div>
 
         <div className="prop-section">
@@ -1599,9 +1868,12 @@ export default function App() {
   const [clipboard,     setClipboard]     = useState(null)
   const [activeProfile, setActiveProfile] = useState('Default Profile')
   const [profiles,      setProfiles]      = useState(['Default Profile'])
-  const [livePreviews,  setLivePreviews]  = useState({})   // canvas snapshots for dynamic buttons
-  const [obsScenes,     setObsScenes]     = useState([])    // scene names fetched from OBS
-  const [appVersion,    setAppVersion]    = useState('')
+  const [livePreviews,         setLivePreviews]         = useState({})   // canvas snapshots for dynamic buttons
+  const [obsScenes,            setObsScenes]            = useState([])    // scene names fetched from OBS
+  const [obsSceneCollections,  setObsSceneCollections]  = useState([])    // scene collection names
+  const [obsInputs,            setObsInputs]            = useState([])    // audio/media input names
+  const [obsTransitions,       setObsTransitions]       = useState([])    // scene transition names
+  const [appVersion,           setAppVersion]           = useState('')
 
   // Fetch app version once on mount
   useEffect(() => {
@@ -2324,19 +2596,25 @@ export default function App() {
         }
         obsRef.current = obs
         obsConnectedRef.current = true
-        // Fetch scene list and keep it up to date
+        // Fetch all OBS data and keep lists up to date
         const sortScenes = (scenes = []) =>
           [...scenes].sort((a, b) => (b.sceneIndex ?? 0) - (a.sceneIndex ?? 0)).map(s => s.sceneName).filter(Boolean)
-        try {
-          const { scenes } = await obs.call('GetSceneList')
-          setObsScenes(sortScenes(scenes))
-        } catch {}
-        obs.on('SceneListChanged', (data) => setObsScenes(sortScenes(data?.scenes)))
+        try { const { scenes } = await obs.call('GetSceneList'); setObsScenes(sortScenes(scenes)) } catch {}
+        try { const { sceneCollections } = await obs.call('GetSceneCollectionList'); setObsSceneCollections((sceneCollections ?? []).map(c => c.sceneCollectionName ?? c).filter(Boolean)) } catch {}
+        try { const { inputs } = await obs.call('GetInputList'); setObsInputs((inputs ?? []).map(i => i.inputName).filter(Boolean)) } catch {}
+        try { const { transitions } = await obs.call('GetSceneTransitionList'); setObsTransitions((transitions ?? []).map(t => t.transitionName).filter(Boolean)) } catch {}
+        obs.on('SceneListChanged',           (data) => setObsScenes(sortScenes(data?.scenes)))
+        obs.on('SceneCollectionListChanged', (data) => setObsSceneCollections((data?.sceneCollections ?? []).map(c => c.sceneCollectionName ?? c).filter(Boolean)))
+        obs.on('InputCreated',               ()     => obs.call('GetInputList').then(r => setObsInputs((r.inputs ?? []).map(i => i.inputName).filter(Boolean))).catch(() => {}))
+        obs.on('InputRemoved',               ()     => obs.call('GetInputList').then(r => setObsInputs((r.inputs ?? []).map(i => i.inputName).filter(Boolean))).catch(() => {}))
       } catch {
         // OBS not running / not reachable — will retry after 5 s
         try { obsRef.current?.disconnect() } catch {}
         obsRef.current = null
         setObsScenes([])
+        setObsSceneCollections([])
+        setObsInputs([])
+        setObsTransitions([])
         obsReconnectTimerRef.current = setTimeout(() => obsConnectFnRef.current?.(), 5000)
       }
     }
@@ -2419,18 +2697,50 @@ export default function App() {
         }
       } else if (action?.type === 'media' && action.command && action.command !== 'display-only') {
         window.streamDeck.playerctlCommand(action.command, action.player || '%any')
-      } else if (action?.type === 'obs' && obsConnectedRef.current && obsRef.current) {
+      } else if (action?.type?.startsWith('obs-') && obsConnectedRef.current && obsRef.current) {
         const obs = obsRef.current
         ;(async () => {
           try {
-            if (action.operation === 'toggle-record') {
+            if (action.type === 'obs-record') {
               await obs.call('ToggleRecord')
-            } else if (action.operation === 'toggle-stream') {
-              await obs.call('ToggleStream')
-            } else if (action.operation === 'toggle-pause-record') {
+            } else if (action.type === 'obs-record-pause') {
               await obs.call('ToggleRecordPause')
-            } else if (action.operation === 'switch-scene' && action.sceneName) {
+            } else if (action.type === 'obs-stream') {
+              await obs.call('ToggleStream')
+            } else if (action.type === 'obs-replay-buffer') {
+              await obs.call('ToggleReplayBuffer')
+            } else if (action.type === 'obs-save-replay') {
+              await obs.call('SaveReplayBuffer')
+            } else if (action.type === 'obs-studio-mode') {
+              await obs.call('ToggleStudioMode')
+            } else if (action.type === 'obs-preview-scene') {
+              await obs.call('TriggerStudioModeTransition')
+            } else if (action.type === 'obs-scene' && action.sceneName) {
               await obs.call('SetCurrentProgramScene', { sceneName: action.sceneName })
+            } else if (action.type === 'obs-scene-collection' && action.collectionName) {
+              await obs.call('SetCurrentSceneCollection', { sceneCollectionName: action.collectionName })
+            } else if (action.type === 'obs-mute' && action.inputName) {
+              await obs.call('ToggleInputMute', { inputName: action.inputName })
+            } else if (action.type === 'obs-media' && action.inputName) {
+              await obs.call('TriggerMediaInputAction', { inputName: action.inputName, mediaAction: action.mediaAction ?? 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE' })
+            } else if (action.type === 'obs-source' && action.sceneName && action.sourceName) {
+              // Fetch current visibility then toggle
+              const { sceneItems } = await obs.call('GetSceneItemList', { sceneName: action.sceneName })
+              const item = sceneItems?.find(i => i.sourceName === action.sourceName)
+              if (item != null) {
+                await obs.call('SetSceneItemEnabled', { sceneName: action.sceneName, sceneItemId: item.sceneItemId, sceneItemEnabled: !item.sceneItemEnabled })
+              }
+            } else if (action.type === 'obs-filter' && action.sourceName && action.filterName) {
+              // Fetch current enabled state then toggle
+              const { filterEnabled } = await obs.call('GetSourceFilter', { sourceName: action.sourceName, filterName: action.filterName })
+              await obs.call('SetSourceFilterEnabled', { sourceName: action.sourceName, filterName: action.filterName, filterEnabled: !filterEnabled })
+            } else if (action.type === 'obs-screenshot' && action.sourceName) {
+              const filePath = action.imageFilePath || `/tmp/obs-screenshot-${Date.now()}.png`
+              await obs.call('SaveSourceScreenshot', { sourceName: action.sourceName, imageFormat: 'png', imageFilePath: filePath })
+            } else if (action.type === 'obs-transition' && action.transitionName) {
+              await obs.call('SetCurrentSceneTransitionOverride', { transitionName: action.transitionName })
+            } else if (action.type === 'obs-chapter-marker') {
+              await obs.call('SendStreamCaption', { captionText: action.captionText ?? '' })
             }
           } catch (err) {
             console.warn('[OBS] action failed:', err.message)
@@ -2696,6 +3006,9 @@ export default function App() {
             pageCount={pages.length}
             onEnterFolder={() => { enterFolder(selectedKey); setSelectedKey(null) }}
             obsScenes={obsScenes}
+            obsInputs={obsInputs}
+            obsTransitions={obsTransitions}
+            obsSceneCollections={obsSceneCollections}
           />
         )}
       </div>
