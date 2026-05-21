@@ -3,7 +3,7 @@
 const { app, BrowserWindow, ipcMain, dialog, protocol, net, Tray, Menu, nativeImage } = require('electron')
 const path   = require('path')
 const fs     = require('fs')
-const { spawn } = require('child_process')
+const { spawn, fork } = require('child_process')
 const {
   PLAYERCTL_COMMANDS,
   isValidHotkey,
@@ -16,6 +16,12 @@ const {
 } = require('./validation.cjs')
 const { parseSystemStats } = require('./stats.cjs')
 
+// Register custom protocol schemes before app is ready
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'plugin', privileges: { standard: true, secure: true, corsEnabled: true, supportFetchAPI: true } },
+  { scheme: 'sdpi',   privileges: { standard: true, secure: true, corsEnabled: true, supportFetchAPI: true } },
+])
+
 let mainWindow
 let libraryDir = null
 let activeProfileName = 'Default Profile'
@@ -24,6 +30,10 @@ let isQuitting     = false
 let deck           = null   // current Stream Deck connection
 let isSleeping     = false  // hardware sleep state
 let reconnectTimer = null   // USB reconnect polling timer
+
+// ── Plugin system state ───────────────────────────────────────────────────────
+const pluginProcesses = new Map()  // pluginUUID -> ChildProcess
+let pluginManifests   = []         // [{ manifest, pluginDir }]
 
 // ── Tray icon: 22×22 PNG of a 5×3 button grid, no extra deps ─
 function createTrayIconPng() {
@@ -81,6 +91,8 @@ function doQuit() {
   if (isQuitting) return
   isQuitting = true
   if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null }
+  for (const child of pluginProcesses.values()) { try { child.kill() } catch {} }
+  pluginProcesses.clear()
   if (tray) { tray.destroy(); tray = null }           // remove icon immediately
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
   const deckRef = deck
@@ -181,6 +193,77 @@ function createWindow() {
   mainWindow.on('close', e => {
     if (!isQuitting) { e.preventDefault(); mainWindow.hide() }
   })
+}
+
+// ── Plugin system ─────────────────────────────────────────────────────────────
+function getPluginsDir() {
+  return path.join(app.getPath('userData'), 'plugins')
+}
+
+function startPluginProcess(manifest, pluginDir) {
+  const codePath = path.join(pluginDir, manifest.CodePath ?? 'bin/plugin.cjs')
+  if (!fs.existsSync(codePath)) {
+    console.warn(`[Plugin] ${manifest.UUID}: CodePath not found: ${codePath}`)
+    return null
+  }
+  let child
+  try {
+    child = fork(codePath, [], {
+      silent: true,
+      env: { ...process.env, PLUGIN_UUID: manifest.UUID, PLUGIN_DIR: pluginDir },
+    })
+  } catch (err) {
+    console.error(`[Plugin] ${manifest.UUID}: fork failed:`, err.message)
+    return null
+  }
+  child.stdout?.on('data', d => console.log(`[Plugin ${manifest.UUID}]`, d.toString().trimEnd()))
+  child.stderr?.on('data', d => console.error(`[Plugin ${manifest.UUID}]`, d.toString().trimEnd()))
+  child.on('message', msg => {
+    if (!msg?.event) return
+    sendToRenderer('plugin:message', msg)
+  })
+  child.on('exit', code => {
+    console.log(`[Plugin] ${manifest.UUID} exited (code ${code})`)
+    pluginProcesses.delete(manifest.UUID)
+  })
+  child.on('error', err => console.error(`[Plugin] ${manifest.UUID} error:`, err.message))
+  pluginProcesses.set(manifest.UUID, child)
+  console.log(`[Plugin] ${manifest.UUID} started (pid ${child.pid})`)
+  return child
+}
+
+function stopPlugin(uuid) {
+  const child = pluginProcesses.get(uuid)
+  if (child) {
+    try { child.kill() } catch {}
+    pluginProcesses.delete(uuid)
+  }
+}
+
+async function loadPlugins() {
+  const dir = getPluginsDir()
+  await fs.promises.mkdir(dir, { recursive: true }).catch(() => {})
+  let entries
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }) }
+  catch { pluginManifests = []; return }
+  pluginManifests = []
+  for (const entry of entries.filter(e => e.isDirectory() && e.name.endsWith('.sdPlugin'))) {
+    const pluginDir = path.join(dir, entry.name)
+    let manifest
+    try {
+      manifest = JSON.parse(await fs.promises.readFile(path.join(pluginDir, 'manifest.json'), 'utf8'))
+    } catch (err) {
+      console.warn(`[Plugin] Skipping ${entry.name}:`, err.message)
+      continue
+    }
+    if (!manifest.UUID || !Array.isArray(manifest.Actions)) {
+      console.warn(`[Plugin] Skipping ${entry.name}: invalid manifest`)
+      continue
+    }
+    pluginManifests.push({ manifest, pluginDir })
+    startPluginProcess(manifest, pluginDir)
+  }
+  console.log(`[Plugin] Loaded ${pluginManifests.length} plugin(s)`)
 }
 
 // ── Module-level state for CPU polling (plugin: system monitor) ──────────────
@@ -285,6 +368,59 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('app:get-version', () => app.getVersion())
+
+  // ── Plugin system ────────────────────────────────────────────────────────────
+  ipcMain.handle('plugins:list', () =>
+    pluginManifests.map(({ manifest, pluginDir }) => ({
+      ...manifest,
+      pluginDir,
+      running: pluginProcesses.has(manifest.UUID),
+    }))
+  )
+
+  ipcMain.handle('plugins:install', async (_, { sourcePath }) => {
+    if (!sourcePath) return { ok: false, error: 'No source path' }
+    const resolved = path.resolve(sourcePath)
+    if (!resolved.endsWith('.sdPlugin')) return { ok: false, error: 'Folder must end with .sdPlugin' }
+    let manifest
+    try {
+      manifest = JSON.parse(await fs.promises.readFile(path.join(resolved, 'manifest.json'), 'utf8'))
+    } catch {
+      return { ok: false, error: 'Cannot read manifest.json in that folder' }
+    }
+    if (!manifest.UUID || !Array.isArray(manifest.Actions)) {
+      return { ok: false, error: 'Invalid manifest: missing UUID or Actions array' }
+    }
+    const destDir = path.join(getPluginsDir(), `${manifest.UUID}.sdPlugin`)
+    try {
+      await fs.promises.mkdir(getPluginsDir(), { recursive: true })
+      await fs.promises.cp(resolved, destDir, { recursive: true })
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+    pluginManifests.push({ manifest, pluginDir: destDir })
+    startPluginProcess(manifest, destDir)
+    return { ok: true, uuid: manifest.UUID }
+  })
+
+  ipcMain.handle('plugins:uninstall', async (_, { uuid }) => {
+    if (!uuid) return { ok: false, error: 'No UUID provided' }
+    stopPlugin(uuid)
+    pluginManifests = pluginManifests.filter(p => p.manifest.UUID !== uuid)
+    try {
+      await fs.promises.rm(path.join(getPluginsDir(), `${uuid}.sdPlugin`), { recursive: true, force: true })
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+    return { ok: true }
+  })
+
+  ipcMain.handle('plugin:send', (_, { pluginUUID, actionUUID, event, settings, context }) => {
+    const child = pluginProcesses.get(pluginUUID)
+    if (!child) return { ok: false, error: 'Plugin not running' }
+    child.send({ event: event ?? 'keyDown', actionUUID, settings, context })
+    return { ok: true }
+  })
 
   ipcMain.handle('profile:get-active', async () => activeProfileName)
 
@@ -507,6 +643,7 @@ function scheduleReconnect() {
 
 async function initStreamDeck() {
   registerIpcHandlers()
+  await loadPlugins()
   await connectDeck()
   if (!deck) scheduleReconnect()
 
@@ -517,6 +654,33 @@ async function initStreamDeck() {
 }
 
 app.whenReady().then(async () => {
+  // Serve plugin HTML/JS assets via plugin://{UUID}/path (e.g. plugin://com.example.obs/ui/inspector.html)
+  protocol.handle('plugin', (request) => {
+    const url        = new URL(request.url)
+    const pluginUUID = url.hostname
+    const filePath   = decodeURIComponent(url.pathname.slice(1))
+    const pluginsDir = getPluginsDir()
+    const pluginDir  = path.join(pluginsDir, `${pluginUUID}.sdPlugin`)
+    const resolved   = path.resolve(path.join(pluginDir, filePath))
+    // Security: only serve files inside the plugin's own directory
+    if (!resolved.startsWith(pluginDir + path.sep) && resolved !== pluginDir) {
+      return new Response('Forbidden', { status: 403 })
+    }
+    return net.fetch('file://' + resolved)
+  })
+
+  // Serve sdpi-bridge.js from the host app: <script src="sdpi://host/bridge.js"></script>
+  protocol.handle('sdpi', (request) => {
+    const url = new URL(request.url)
+    if (url.pathname === '/bridge.js') {
+      const bridgePath = app.isPackaged
+        ? path.join(process.resourcesPath, 'bridge', 'sdpi-bridge.js')
+        : path.join(__dirname, '..', 'public', 'bridge', 'sdpi-bridge.js')
+      return net.fetch('file://' + bridgePath)
+    }
+    return new Response('Not Found', { status: 404 })
+  })
+
   // Serve local icon library files via a custom protocol to avoid CORS issues in dev
   protocol.handle('iconlib', (request) => {
     const encoded = request.url.slice('iconlib://'.length)
@@ -537,6 +701,14 @@ app.whenReady().then(async () => {
   createWindow()
   createTray()
   await initStreamDeck()
+
+  ipcMain.handle('plugins:browse-dir', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select .sdPlugin folder',
+      properties: ['openDirectory'],
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
 
   // IPC: icon library — open folder picker
   ipcMain.handle('icons:browse-dir', async () => {

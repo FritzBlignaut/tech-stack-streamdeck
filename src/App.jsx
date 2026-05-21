@@ -268,13 +268,21 @@ function ProfileSwitcher({ activeProfile, profiles, onSwitch, onCreate, onDelete
 }
 
 // ─── Actions Panel ──────────────────────────────────────────
-function ActionsPanel() {
+function ActionsPanel({ pluginManifests = [] }) {
   const [search, setSearch]     = useState('')
   const [expanded, setExpanded] = useState({ streamdeck: true, system: true })
 
   const toggle = id => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
 
-  const filtered = ACTION_CATEGORIES
+  const pluginCategories = pluginManifests.map(p => ({
+    id:      p.UUID,
+    name:    p.Category || p.Name,
+    actions: (p.Actions || []).map(a => ({ id: a.UUID, name: a.Name, icon: '🔌' })),
+  }))
+
+  const allCategories = [...ACTION_CATEGORIES, ...pluginCategories]
+
+  const filtered = allCategories
     .map(cat => ({
       ...cat,
       actions: cat.actions.filter(a =>
@@ -317,7 +325,9 @@ function ActionsPanel() {
             {expanded[cat.id] && (
               <div className="category-actions">
                 {cat.actions.map(action => {
-                  const enabled = ENABLED_ACTIONS.has(action.id)
+                  // Plugin actions (reverse-DNS UUID) are always available
+                  const isPlugin = action.id.includes('.')
+                  const enabled  = isPlugin || ENABLED_ACTIONS.has(action.id)
                   return (
                     <div
                       key={action.id}
@@ -837,7 +847,7 @@ function dispatchSubAction(sd, act) {
   return Promise.resolve()
 }
 
-export function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder, obsScenes = [], obsInputs = [], obsTransitions = [], obsSceneCollections = [] }) {
+export function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder, obsScenes = [], obsInputs = [], obsTransitions = [], obsSceneCollections = [], pluginManifests = [] }) {
   const [picking, setPicking] = useState(false)
 
   // ── assigned: folder ──
@@ -1590,28 +1600,46 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
   }
 
   // ── unassigned ──
+  const pluginCategories = pluginManifests.map(p => ({
+    id:      p.UUID,
+    name:    p.Category || p.Name,
+    actions: (p.Actions || []).map(a => ({ id: a.UUID, name: a.Name, icon: '🔌' })),
+  }))
+  const allCategories = [...ACTION_CATEGORIES, ...pluginCategories]
+
   return (
     <div className="unassigned-action">
       {picking ? (
         <div className="action-type-list">
-          {ACTION_CATEGORIES.map(cat => (
+          {allCategories.map(cat => (
             <div key={cat.id}>
               <div className="action-category-header">{cat.name}</div>
-              {cat.actions.map(a => (
-                <button
-                  key={a.id}
-                  className={`action-type-item${!ENABLED_ACTIONS.has(a.id) ? ' disabled' : ''}`}
-                  onClick={() => {
-                    if (!ENABLED_ACTIONS.has(a.id)) return
-                    onChange({ action: ACTION_DEFAULTS[a.id] ?? { type: a.id } })
-                    setPicking(false)
-                  }}
-                >
-                  <span className="action-type-icon">{a.icon}</span>
-                  <span>{a.name}</span>
-                  {!ENABLED_ACTIONS.has(a.id) && <span className="action-type-soon">soon</span>}
-                </button>
-              ))}
+              {cat.actions.map(a => {
+                const isPlugin = a.id.includes('.')
+                const enabled  = isPlugin || ENABLED_ACTIONS.has(a.id)
+                return (
+                  <button
+                    key={a.id}
+                    className={`action-type-item${!enabled ? ' disabled' : ''}`}
+                    onClick={() => {
+                      if (!enabled) return
+                      if (isPlugin) {
+                        const plugin = pluginManifests.find(p =>
+                          (p.Actions || []).some(act => act.UUID === a.id)
+                        )
+                        if (plugin) onChange({ action: { type: a.id, pluginUUID: plugin.UUID } })
+                      } else {
+                        onChange({ action: ACTION_DEFAULTS[a.id] ?? { type: a.id } })
+                      }
+                      setPicking(false)
+                    }}
+                  >
+                    <span className="action-type-icon">{a.icon}</span>
+                    <span>{a.name}</span>
+                    {!enabled && <span className="action-type-soon">soon</span>}
+                  </button>
+                )
+              })}
             </div>
           ))}
         </div>
@@ -1628,7 +1656,87 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
   )
 }
 
-function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder, obsScenes = [], obsInputs = [], obsTransitions = [], obsSceneCollections = [] }) {
+// ─── Plugin Property Inspector ──────────────────────────────
+function PluginInspector({ action, onChange, pluginManifests = [] }) {
+  const iframeRef  = useRef(null)
+  const pluginUUID = action?.pluginUUID
+  const actionUUID = action?.type
+
+  // Find the action definition to get its PropertyInspectorPath
+  const pluginData    = pluginManifests.find(p => p.UUID === pluginUUID)
+  const actionDef     = pluginData?.Actions?.find(a => a.UUID === actionUUID)
+  const inspectorPath = actionDef?.PropertyInspectorPath ?? pluginData?.PropertyInspectorPath ?? 'ui/inspector.html'
+  const inspectorSrc  = pluginUUID ? `plugin://${pluginUUID}/${inspectorPath}` : null
+
+  // Send current settings to the iframe once it loads
+  const handleLoad = () => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'sdpi:settings', payload: { ...action } },
+      '*'
+    )
+  }
+
+  // Bridge: iframe <-> host (settings) + plugin process <-> inspector (sendToPropertyInspector)
+  useEffect(() => {
+    const msgHandler = e => {
+      if (e.source !== iframeRef.current?.contentWindow) return
+      if (!e.data?.type) return
+      if (e.data.type === 'sdpi:setSettings') {
+        onChange({ action: { ...action, ...e.data.payload } })
+      } else if (e.data.type === 'sdpi:getSettings') {
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: 'sdpi:settings', payload: { ...action } },
+          '*'
+        )
+      } else if (e.data.type === 'sdpi:sendToPlugin') {
+        window.streamDeck?.sendToPlugin?.(pluginUUID, actionUUID, 'sendToPropertyInspector', e.data.payload, null)
+      }
+    }
+    const piHandler = e => {
+      if (e.detail?.event === 'sendToPropertyInspector' && e.detail.actionUUID === actionUUID) {
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: 'sdpi:sendToPropertyInspector', payload: e.detail.payload },
+          '*'
+        )
+      }
+    }
+    window.addEventListener('message', msgHandler)
+    window.addEventListener('plugin:toInspector', piHandler)
+    return () => {
+      window.removeEventListener('message', msgHandler)
+      window.removeEventListener('plugin:toInspector', piHandler)
+    }
+  }, [action, onChange, pluginUUID, actionUUID]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!inspectorSrc) {
+    return (
+      <div className="assigned-action">
+        <p className="action-hint">Plugin action — no inspector path configured.</p>
+        <button className="action-remove" onClick={() => onChange({ action: null })}>Remove</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="plugin-inspector-wrap">
+      <iframe
+        ref={iframeRef}
+        src={inspectorSrc}
+        title="Plugin Inspector"
+        className="plugin-inspector-frame"
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        onLoad={handleLoad}
+      />
+      <button
+        className="plugin-inspector-remove"
+        onClick={() => onChange({ action: null })}
+        title="Remove action"
+      >Remove action</button>
+    </div>
+  )
+}
+
+function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder, obsScenes = [], obsInputs = [], obsTransitions = [], obsSceneCollections = [], pluginManifests = [] }) {
   const fileInputRef        = useRef(null)
   const pressedFileInputRef = useRef(null)
   const [libraryTarget, setLibraryTarget] = useState(null) // 'default' | 'pressed' | null
@@ -1672,7 +1780,11 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
       <div className="properties-body">
         <div className="prop-section">
           <span className="prop-label">Action</span>
-          <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} onEnterFolder={onEnterFolder} obsScenes={obsScenes} obsInputs={obsInputs} obsTransitions={obsTransitions} obsSceneCollections={obsSceneCollections} />
+          {config?.action?.type?.includes('.') ? (
+            <PluginInspector action={config.action} onChange={onChange} pluginManifests={pluginManifests} />
+          ) : (
+            <ActionSection action={config?.action} onChange={onChange} profiles={profiles} pageCount={pageCount} onEnterFolder={onEnterFolder} obsScenes={obsScenes} obsInputs={obsInputs} obsTransitions={obsTransitions} obsSceneCollections={obsSceneCollections} pluginManifests={pluginManifests} />
+          )}
         </div>
 
         <div className="prop-section">
@@ -1853,6 +1965,79 @@ function ContextMenu({ x, y, keyIndex, onClear, onCopy, onPaste, hasClipboard, h
   )
 }
 
+// ─── Plugin Browser ─────────────────────────────────────────
+function PluginBrowser({ pluginManifests, onInstall, onUninstall, onClose }) {
+  const [installing, setInstalling] = useState(false)
+  const [error,      setError]      = useState('')
+
+  const handleInstall = async () => {
+    setError('')
+    const sourcePath = await window.streamDeck?.browsePluginDir?.()
+    if (!sourcePath) return
+    setInstalling(true)
+    const res = await window.streamDeck?.installPlugin?.(sourcePath)
+    setInstalling(false)
+    if (res?.ok) {
+      onInstall?.()
+    } else {
+      setError(res?.error ?? 'Install failed')
+    }
+  }
+
+  const handleUninstall = async (uuid) => {
+    if (!window.confirm('Uninstall this plugin? This cannot be undone.')) return
+    const res = await window.streamDeck?.uninstallPlugin?.(uuid)
+    if (res?.ok) onInstall?.()  // refresh list
+    else setError(res?.error ?? 'Uninstall failed')
+  }
+
+  return (
+    <div className="plugin-browser-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="plugin-browser">
+        <div className="plugin-browser-header">
+          <h2>Plugins</h2>
+          <button className="plugin-browser-close" onClick={onClose} aria-label="Close">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="12" height="12">
+              <path d="M1 1l10 10M11 1L1 11" />
+            </svg>
+          </button>
+        </div>
+
+        {error && <p className="plugin-browser-error">{error}</p>}
+
+        {pluginManifests.length === 0 ? (
+          <p className="plugin-browser-empty">No plugins installed.</p>
+        ) : (
+          <div className="plugin-cards">
+            {pluginManifests.map(p => (
+              <div key={p.UUID} className="plugin-card">
+                <div className="plugin-card-info">
+                  <span className="plugin-card-name">{p.Name}</span>
+                  <span className="plugin-card-meta">v{p.Version} · {p.Author}</span>
+                  {p.Description && <span className="plugin-card-desc">{p.Description}</span>}
+                </div>
+                <button
+                  className="plugin-card-uninstall"
+                  onClick={() => handleUninstall(p.UUID)}
+                  title="Uninstall plugin"
+                >Uninstall</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          className="plugin-install-btn"
+          onClick={handleInstall}
+          disabled={installing}
+        >
+          {installing ? 'Installing…' : '+ Install from folder…'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── App ────────────────────────────────────────────────────
 export default function App() {
   const [device,        setDevice]        = useState(null)
@@ -1874,6 +2059,8 @@ export default function App() {
   const [obsInputs,            setObsInputs]            = useState([])    // audio/media input names
   const [obsTransitions,       setObsTransitions]       = useState([])    // scene transition names
   const [appVersion,           setAppVersion]           = useState('')
+  const [pluginManifests,      setPluginManifests]      = useState([])    // installed .sdPlugin manifests
+  const [showPluginBrowser,    setShowPluginBrowser]    = useState(false) // plugin browser modal
 
   // Fetch app version once on mount
   useEffect(() => {
@@ -2568,6 +2755,20 @@ export default function App() {
         })
       }
     })
+    // Load installed plugins
+    window.streamDeck.listPlugins?.().then(list => {
+      if (Array.isArray(list)) setPluginManifests(list)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle messages relayed from plugin child processes (setSettings, sendToPropertyInspector)
+  useEffect(() => {
+    if (!window.streamDeck?.onPluginMessage) return
+    return window.streamDeck.onPluginMessage(msg => {
+      if (msg.event === 'sendToPropertyInspector') {
+        window.dispatchEvent(new CustomEvent('plugin:toInspector', { detail: msg }))
+      }
+    })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-connect to OBS WebSocket (localhost:4455, no password) on mount
@@ -2741,6 +2942,10 @@ export default function App() {
               await obs.call('SetCurrentSceneTransitionOverride', { transitionName: action.transitionName })
             } else if (action.type === 'obs-chapter-marker') {
               await obs.call('SendStreamCaption', { captionText: action.captionText ?? '' })
+            } else if (action.type?.includes('.')) {
+              // Plugin action — dispatch keyDown to plugin process
+              const context = JSON.stringify({ index, actionUUID: action.type, pluginUUID: action.pluginUUID })
+              window.streamDeck?.sendToPlugin?.(action.pluginUUID, action.type, 'keyDown', { ...action }, context)
             }
           } catch (err) {
             console.warn('[OBS] action failed:', err.message)
@@ -2864,6 +3069,15 @@ export default function App() {
             <span className={`device-status-dot${device ? ' connected' : ''}`} />
           </span>
 
+          <button className="icon-btn" title="Plugins" onClick={() => setShowPluginBrowser(true)}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">
+              <rect x="2" y="2" width="5.5" height="5.5" rx="1" />
+              <rect x="8.5" y="2" width="5.5" height="5.5" rx="1" />
+              <rect x="2" y="8.5" width="5.5" height="5.5" rx="1" />
+              <rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1" />
+            </svg>
+          </button>
+
           <button className="icon-btn" title="Settings">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
               <circle cx="8" cy="8" r="2.5" />
@@ -2876,7 +3090,7 @@ export default function App() {
 
       {/* ── Workspace ── */}
       <div className="workspace">
-        <ActionsPanel />
+        <ActionsPanel pluginManifests={pluginManifests} />
 
         <main className="device-area">
           {device ? (
@@ -2924,9 +3138,20 @@ export default function App() {
                   onContextMenu={(e, i) => setContextMenu({ x: e.clientX, y: e.clientY, keyIndex: i })}
                   onDropAction={(index, actionId) => {
                     const action = ACTION_DEFAULTS[actionId]
-                    if (!action) return
-                    updateConfig(index, { action })
-                    setSelectedKey(index)
+                    if (action) {
+                      updateConfig(index, { action })
+                      setSelectedKey(index)
+                      return
+                    }
+                    // Plugin actions have a dot in their UUID (reverse-DNS)
+                    if (actionId.includes('.')) {
+                      const plugin = pluginManifests.find(p =>
+                        (p.Actions || []).some(a => a.UUID === actionId)
+                      )
+                      if (!plugin) return
+                      updateConfig(index, { action: { type: actionId, pluginUUID: plugin.UUID } })
+                      setSelectedKey(index)
+                    }
                   }}
                 />
               </div>
@@ -3009,6 +3234,7 @@ export default function App() {
             obsInputs={obsInputs}
             obsTransitions={obsTransitions}
             obsSceneCollections={obsSceneCollections}
+            pluginManifests={pluginManifests}
           />
         )}
       </div>
@@ -3030,6 +3256,14 @@ export default function App() {
           }}
           onClear={clearButton}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {showPluginBrowser && (
+        <PluginBrowser
+          pluginManifests={pluginManifests}
+          onInstall={() => window.streamDeck?.listPlugins?.().then(list => { if (Array.isArray(list)) setPluginManifests(list) })}
+          onClose={() => setShowPluginBrowser(false)}
         />
       )}
     </div>
