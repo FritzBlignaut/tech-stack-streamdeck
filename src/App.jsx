@@ -2185,6 +2185,8 @@ export default function App() {
     setCurrentPage(pageIndex)
     setFolderPath([])
     setSelectedKey(null)
+    setToggledButtons({})
+    toggledButtonsRef.current = {}
     const newPage = pg[pageIndex] ?? {}
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
@@ -2199,6 +2201,8 @@ export default function App() {
     setCurrentPage(newIndex)
     setFolderPath([])
     setSelectedKey(null)
+    setToggledButtons({})
+    toggledButtonsRef.current = {}
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
     for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, undefined)
@@ -2214,6 +2218,8 @@ export default function App() {
     setCurrentPage(newCurrentPage)
     setFolderPath([])
     setSelectedKey(null)
+    setToggledButtons({})
+    toggledButtonsRef.current = {}
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
     for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newPage[i])
@@ -2226,6 +2232,8 @@ export default function App() {
     const newButtons  = getButtonsAt(pagesRef.current, currentPageRef.current, newPath)
     setFolderPath(newPath)
     setSelectedKey(null)
+    setToggledButtons({})
+    toggledButtonsRef.current = {}
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
     for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newButtons[i])
@@ -2238,6 +2246,8 @@ export default function App() {
     const newButtons = getButtonsAt(pagesRef.current, currentPageRef.current, newPath)
     setFolderPath(newPath)
     setSelectedKey(null)
+    setToggledButtons({})
+    toggledButtonsRef.current = {}
     const rows  = deviceRef.current?.rows ?? 3
     const cols  = deviceRef.current?.cols ?? 5
     for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newButtons[i])
@@ -2247,17 +2257,23 @@ export default function App() {
   // ─────────────────────────────────────────────────────────────
 
   const updateConfig = (index, updates) => {
-    setPages(prev => {
-      const currentButtons = getButtonsAt(prev, currentPage, folderPath)
-      const next = { title: '', iconDataUrl: null, bgColor: '#262626', ...currentButtons[index], ...updates }
-      drawHardwareButton(index, next)
-      return immutableSetButton(prev, currentPage, folderPath, index, next)
-    })
+    const currentButtons = getButtonsAt(pagesRef.current, currentPage, folderPath)
+    const next = { title: '', iconDataUrl: null, bgColor: '#262626', ...currentButtons[index], ...updates }
+    drawHardwareButton(index, next)
+    setPages(prev => immutableSetButton(prev, currentPage, folderPath, index, next))
   }
 
   const clearButton = (index) => {
     drawHardwareButton(index, null)
     setPages(prev => immutableSetButton(prev, currentPage, folderPath, index, null))
+    if (toggledButtonsRef.current[index]) {
+      delete toggledButtonsRef.current[index]
+      setToggledButtons(prev => {
+        const next = { ...prev }
+        delete next[index]
+        return next
+      })
+    }
     setContextMenu(null)
   }
 
