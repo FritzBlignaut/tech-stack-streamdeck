@@ -14,7 +14,9 @@
     "test:run": "vitest run",
     "electron:dev": "VITE_PORT=$(ss -tlnp 2>/dev/null | grep -oE ':517[3-9]' | tr -d ':' | head -1 || echo 5173) electron .",
     "rebuild": "electron-rebuild -f -w node-hid",
-    "electron:build": "vite build && electron-builder --linux"
+    "electron:build": "vite build && electron-builder --linux",
+    "package:local": "npm run build && npx electron-builder --linux dir --publish=never",
+    "test:local": "npm run package:local && ./dist-electron/linux-unpacked/tech-stack-streamdeck"
   },
   "build": {
     "appId": "com.techstack.streamdeck",

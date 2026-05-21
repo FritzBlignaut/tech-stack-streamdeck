@@ -81,10 +81,27 @@ function doQuit() {
   if (isQuitting) return
   isQuitting = true
   if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null }
-  if (deck) { deck.clearPanel().catch(() => {}); deck.close().catch(() => {}) }
   if (tray) { tray.destroy(); tray = null }           // remove icon immediately
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
-  app.exit(0)
+  const deckRef = deck
+  deck = null
+  const exit = () => app.exit(0)
+  if (deckRef) {
+    // removeAllListeners first: after clearPanel/setBrightness the hardware queues
+    // HID input reports; when close() drains that queue the C++ read thread tries
+    // to invoke JS callbacks — if any are still registered it can throw Napi::Error.
+    deckRef.removeAllListeners()
+    // After close() the USB read thread has stopped, but node-hid's HIDAsync
+    // ObjectWrap may still have pending napi_async_work completions or
+    // napi_threadsafe_function callbacks queued in libuv. Draining 3 event-loop
+    // iterations lets those fire harmlessly (no listeners) and allows the wrapper
+    // to finish cleanup before app.exit(0) tears down the V8 environment,
+    // preventing "terminate called after throwing an instance of Napi::Error".
+    deckRef.close().then(
+      () => setImmediate(() => setImmediate(() => setImmediate(exit))),
+      () => setImmediate(() => setImmediate(() => setImmediate(exit)))
+    )
+  } else { exit() }
 }
 
 function createTray() {
