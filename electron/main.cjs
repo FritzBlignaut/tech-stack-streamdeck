@@ -440,19 +440,6 @@ async function connectDeck() {
   const ICON_SIZE = lcdButtons.length > 0 ? lcdButtons[0].pixelSize.width : null
   console.log(`[StreamDeck] Icon size: ${ICON_SIZE}px  (${lcdButtons.length} LCD buttons, ${buttonControls.length} total)`)
 
-  function circleBuffer(r, g, b) {
-    const buf = Buffer.alloc(ICON_SIZE * ICON_SIZE * 3, 0)
-    const cx = ICON_SIZE / 2, cy = ICON_SIZE / 2, radius = ICON_SIZE * 0.38
-    for (let y = 0; y < ICON_SIZE; y++) {
-      for (let x = 0; x < ICON_SIZE; x++) {
-        const i = (y * ICON_SIZE + x) * 3
-        const inside = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) <= radius
-        buf[i] = inside ? r : 18; buf[i+1] = inside ? g : 18; buf[i+2] = inside ? b : 18
-      }
-    }
-    return buf
-  }
-
   await newDeck.clearPanel()
   await newDeck.setBrightness(100)
   console.log('[StreamDeck] Device ready')
@@ -465,8 +452,6 @@ async function connectDeck() {
       console.log('[StreamDeck] Wake')
       return
     }
-    if (ICON_SIZE) await newDeck.fillKeyBuffer(control.index, circleBuffer(0, 130, 255), { format: 'rgb' })
-    else           await newDeck.fillKeyColor(control.index, 0, 130, 255)
     console.log(`[StreamDeck] KEY DOWN  index=${control.index}  row=${control.row}  col=${control.column}`)
     sendToRenderer('deck:down', { index: control.index, row: control.row, column: control.column })
   })

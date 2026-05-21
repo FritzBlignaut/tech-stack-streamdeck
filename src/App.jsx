@@ -323,14 +323,18 @@ function ActionsPanel() {
 }
 
 // ─── Button Grid ────────────────────────────────────────────
-export function ButtonGrid({ rows, cols, selectedKey, pressedKey, onSelectKey, buttonConfigs, onContextMenu, onDropAction, livePreviews = {} }) {
+export function ButtonGrid({ rows, cols, selectedKey, pressedKey, toggledButtons = {}, onSelectKey, buttonConfigs, onContextMenu, onDropAction, livePreviews = {} }) {
   const [dragOverIndex, setDragOverIndex] = useState(null)
 
   return (
     <div className="button-grid" style={{ '--cols': cols }}>
       {Array.from({ length: rows * cols }, (_, i) => {
         const cfg        = buttonConfigs?.[i]
-        const previewSrc = livePreviews[i] ?? cfg?.iconDataUrl ?? null
+        // While physically held, show pressed icon. Otherwise, show toggled icon if latched.
+        const isPhysicallyPressed = pressedKey === i
+        const isLatched           = !!toggledButtons[i]
+        const activeSrc  = (isPhysicallyPressed || isLatched) ? (cfg?.pressedIconDataUrl ?? cfg?.iconDataUrl) : cfg?.iconDataUrl
+        const previewSrc = livePreviews[i] ?? activeSrc ?? null
         const isLive     = !!livePreviews[i]
         return (
           <button
@@ -1356,8 +1360,9 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
 }
 
 function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder, obsScenes = [] }) {
-  const fileInputRef = useRef(null)
-  const [showLibrary, setShowLibrary] = useState(false)
+  const fileInputRef        = useRef(null)
+  const pressedFileInputRef = useRef(null)
+  const [libraryTarget, setLibraryTarget] = useState(null) // 'default' | 'pressed' | null
 
   const handleIconSelect = (e) => {
     const file = e.target.files[0]
@@ -1370,7 +1375,19 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
     e.target.value = ''
   }
 
-  const removeIcon = () => onChange({ iconDataUrl: null })
+  const handlePressedIconSelect = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      onChange({ pressedIconDataUrl: ev.target.result })
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  const removeIcon        = () => onChange({ iconDataUrl: null })
+  const removePressedIcon = () => onChange({ pressedIconDataUrl: null })
 
   return (
     <aside className="properties-panel">
@@ -1391,6 +1408,8 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
 
         <div className="prop-section">
           <span className="prop-label">Icon</span>
+
+          <span className="prop-label-sm">Default</span>
           <div className="icon-picker-area" onClick={() => fileInputRef.current?.click()}>
             {config?.iconDataUrl ? (
               <img src={config.iconDataUrl} className="icon-preview" alt="Button icon" />
@@ -1405,7 +1424,7 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
             )}
           </div>
           <div className="icon-action-row">
-            <button className="icon-lib-open-btn" onClick={() => setShowLibrary(true)}>
+            <button className="icon-lib-open-btn" onClick={() => setLibraryTarget('default')}>
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
                 <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
               </svg>
@@ -1422,10 +1441,48 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
             style={{ display: 'none' }}
             onChange={handleIconSelect}
           />
-          {showLibrary && (
+
+          <span className="prop-label-sm" style={{ marginTop: 10 }}>Pressed</span>
+          <div className="icon-picker-area" onClick={() => pressedFileInputRef.current?.click()}>
+            {config?.pressedIconDataUrl ? (
+              <img src={config.pressedIconDataUrl} className="icon-preview" alt="Pressed icon" />
+            ) : (
+              <div className="icon-picker-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
+                  <rect x="3" y="3" width="18" height="18" rx="3" />
+                  <path d="M12 8v8M8 12h8" />
+                </svg>
+                <span>Add image</span>
+              </div>
+            )}
+          </div>
+          <div className="icon-action-row">
+            <button className="icon-lib-open-btn" onClick={() => setLibraryTarget('pressed')}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+                <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
+              </svg>
+              Icon Library
+            </button>
+            {config?.pressedIconDataUrl && (
+              <button className="icon-remove-btn" onClick={removePressedIcon}>Remove</button>
+            )}
+          </div>
+          <input
+            ref={pressedFileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handlePressedIconSelect}
+          />
+
+          {libraryTarget && (
             <IconLibraryModal
-              onSelect={dataUrl => { onChange({ iconDataUrl: dataUrl }); setShowLibrary(false) }}
-              onClose={() => setShowLibrary(false)}
+              onSelect={dataUrl => {
+                if (libraryTarget === 'default') onChange({ iconDataUrl: dataUrl })
+                else onChange({ pressedIconDataUrl: dataUrl })
+                setLibraryTarget(null)
+              }}
+              onClose={() => setLibraryTarget(null)}
             />
           )}
         </div>
@@ -1532,6 +1589,7 @@ export default function App() {
   const [device,        setDevice]        = useState(null)
   const [selectedKey,   setSelectedKey]   = useState(null)
   const [pressedKey,    setPressedKey]    = useState(null)
+  const [toggledButtons, setToggledButtons] = useState({}) // { [index]: true } = icon2 latched on
   const [sleeping,      setSleeping]      = useState(false)
   const [pages,         setPages]         = useState([{}])   // array of page button-config objects
   const [currentPage,   setCurrentPage]   = useState(0)
@@ -1564,6 +1622,13 @@ export default function App() {
   useEffect(() => { currentPageRef.current = currentPage },              [currentPage])
   useEffect(() => { folderPathRef.current = folderPath },                [folderPath])
   useEffect(() => { deviceRef.current = device },                        [device])
+
+  // Keeps toggledButtons accessible inside event handlers without re-registering them
+  const toggledButtonsRef  = useRef({})
+  useEffect(() => { toggledButtonsRef.current = toggledButtons }, [toggledButtons])
+
+  // Tracks in-flight pressed-icon draws so keyUp can sequence after them
+  const pressedIconDrawRef = useRef({})
 
   // OBS WebSocket refs (renderer-side connection — no IPC needed)
   const obsRef               = useRef(null)
@@ -2285,7 +2350,17 @@ export default function App() {
     })
     const offDown = window.streamDeck.onKeyDown(({ index }) => {
       setPressedKey(index)
-      const action = buttonConfigsRef.current[index]?.action
+      // If a pressed icon is configured, flash it on the hardware button.
+      // Store the promise so the keyUp handler can wait for it before
+      // restoring the default icon — prevents the two async draws racing.
+      const config = buttonConfigsRef.current[index]
+      if (config?.pressedIconDataUrl) {
+        pressedIconDrawRef.current[index] = drawHardwareButtonRef.current(
+          index,
+          { ...config, iconDataUrl: config.pressedIconDataUrl }
+        )
+      }
+      const action = config?.action
       if (action?.type === 'hotkey' && action.keys) {
         window.streamDeck.executeHotkey(action.keys)
       } else if (action?.type === 'open-app' && action.target) {
@@ -2349,8 +2424,35 @@ export default function App() {
     })
     const offUp = window.streamDeck.onKeyUp(({ index }) => {
       setPressedKey(p => p === index ? null : p)
-      // Redraw the hardware button to restore the user's icon after the press-flash
-      drawHardwareButton(index, buttonConfigsRef.current[index])
+      const config = buttonConfigsRef.current[index]
+
+      if (config?.pressedIconDataUrl) {
+        // Toggle: flip latch state and draw the newly-active icon
+        const wasLatched = toggledButtonsRef.current[index]
+        const nowLatched = !wasLatched
+        toggledButtonsRef.current[index] = nowLatched
+        setToggledButtons(prev => ({ ...prev, [index]: nowLatched }))
+
+        const targetUrl  = nowLatched ? config.pressedIconDataUrl : config.iconDataUrl
+        const restore    = () => drawHardwareButton(index, { ...config, iconDataUrl: targetUrl })
+        const pending    = pressedIconDrawRef.current[index]
+        if (pending) {
+          pressedIconDrawRef.current[index] = null
+          Promise.resolve(pending).then(restore, restore)
+        } else {
+          restore()
+        }
+      } else {
+        // No pressed icon configured — just redraw the default
+        const restore = () => drawHardwareButton(index, config)
+        const pending = pressedIconDrawRef.current[index]
+        if (pending) {
+          pressedIconDrawRef.current[index] = null
+          Promise.resolve(pending).then(restore, restore)
+        } else {
+          restore()
+        }
+      }
     })
     const offSleep       = window.streamDeck.onSleep(() => { stopAllGifAnimationsRef.current?.(); stopAllDynamicButtonsRef.current?.(); setSleeping(true) })
     const offWake        = window.streamDeck.onWake(()  => setSleeping(false))
@@ -2489,6 +2591,7 @@ export default function App() {
                   cols={cols}
                   selectedKey={selectedKey}
                   pressedKey={pressedKey}
+                  toggledButtons={toggledButtons}
                   onSelectKey={handleSelect}
                   buttonConfigs={buttonConfigs}
                   livePreviews={livePreviews}
