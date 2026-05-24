@@ -70,4 +70,4 @@ jobs:
           name: tech-stack-streamdeck-linux-deb
           path: dist-electron/*.deb
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
