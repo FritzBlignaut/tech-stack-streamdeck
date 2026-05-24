@@ -328,9 +328,9 @@ function registerIpcHandlers() {
     if (!deck) return
     if (isSleeping) {
       isSleeping = false
-      await deck.setBrightness(100)
       sendToRenderer('deck:wake', {})
       console.log('[StreamDeck] Wake (action)')
+      try { await deck.setBrightness(100) } catch (err) { console.error('[StreamDeck] Failed to restore brightness on wake:', err.message) }
     } else {
       isSleeping = true
       await deck.clearPanel()
@@ -583,9 +583,9 @@ async function connectDeck() {
   newDeck.on('down', async (control) => {
     if (isSleeping) {
       isSleeping = false
-      await newDeck.setBrightness(100)
       sendToRenderer('deck:wake', {})
       console.log('[StreamDeck] Wake')
+      try { await newDeck.setBrightness(100) } catch (err) { console.error('[StreamDeck] Failed to restore brightness on wake:', err.message) }
       return
     }
     console.log(`[StreamDeck] KEY DOWN  index=${control.index}  row=${control.row}  col=${control.column}`)
