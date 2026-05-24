@@ -32,3 +32,35 @@ applyTo: "**"
 **Rule:** Whenever a component's rendered output, props, or action API changes, immediately update the corresponding tests **in the same change**. Never ship a feature without running `npx vitest run` and confirming all tests pass. If tests were written against an old API, rewrite them to match the current API — do not delete them without replacement.
 
 **Checklist addition:** After every non-trivial code change, explicitly run `npx vitest run` as a step in the workflow — not just `npx vite build`.
+
+## 2026-05-24 — Use GitHub CLI (`gh`) to create issues; never use GitKraken or third-party MCP tools for GitHub operations
+
+**Mistake:** Attempted to create GitHub issues using the `mcp_gitkraken_issues_create` tool, which the user rejected as an unwanted third-party dependency.
+
+**Rule:** For all GitHub operations (issues, PRs, labels, etc.) in this repo, use the GitHub CLI (`gh`) directly in the terminal. It is already authenticated (`gh auth status`) and avoids any third-party tool dependency. Never use GitKraken MCP tools for GitHub operations unless the user explicitly requests it.
+
+**Issue creation template:**
+```bash
+gh issue create \
+  --repo FritzBlignaut/tech-stack-streamdeck \
+  --title "..." \
+  --label "bug" \
+  --body "..."
+```
+
+**Available labels:** `bug`, `documentation`, `duplicate`, `enhancement`, `good first issue`, `help wanted`, `invalid`, `question`, `wontfix`
+
+## 2026-05-24 — Always create a branch from `develop` before working on any issue
+
+**Rule:** Before writing a single line of code for any issue (bug or feature), create a dedicated branch from `develop` and switch to it. Never work directly on `develop` or `main`.
+
+**Branch naming convention:** `bug/<short-description>` for bugs, `feature/<short-description>` for enhancements.
+
+**Commands:**
+```bash
+git checkout develop
+git pull
+git checkout -b bug/<short-description>
+```
+
+This ensures work is isolated, traceable to the issue, and can be reviewed via a PR before merging.
