@@ -27,9 +27,10 @@ let libraryDir = null
 let activeProfileName = 'Default Profile'
 let tray           = null
 let isQuitting     = false
-let deck           = null   // current Stream Deck connection
-let isSleeping     = false  // hardware sleep state
-let reconnectTimer = null   // USB reconnect polling timer
+let deck            = null   // current Stream Deck connection
+let isSleeping      = false  // hardware sleep state
+let reconnectTimer  = null   // USB reconnect polling timer
+let deviceInfoCache = null   // last known device info — for renderer reload recovery
 
 // ── Plugin system state ───────────────────────────────────────────────────────
 const pluginProcesses = new Map()  // pluginUUID -> ChildProcess
@@ -192,6 +193,20 @@ function createWindow() {
   // Hide to tray on close unless a real quit was requested
   mainWindow.on('close', e => {
     if (!isQuitting) { e.preventDefault(); mainWindow.hide() }
+  })
+
+  // If the renderer process crashes, reload it automatically
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[App] Renderer process gone:', details.reason, details.exitCode)
+    if (details.reason !== 'clean-exit') {
+      console.log('[App] Reloading renderer…')
+      mainWindow.webContents.reload()
+    }
+  })
+
+  // After any load/reload, re-send device info if the deck is already connected
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (deck && deviceInfoCache) sendToRenderer('deck:info', deviceInfoCache)
   })
 }
 
@@ -601,21 +616,25 @@ async function connectDeck() {
   newDeck.on('error', async (err) => {
     if (deck !== newDeck) return  // stale handler from a previous connection
     console.error('[StreamDeck] Device error — treating as disconnect:', err.message ?? err)
-    deck       = null
-    isSleeping = false
+    deck            = null
+    isSleeping      = false
+    deviceInfoCache = null
     try { await newDeck.close() } catch {}
     sendToRenderer('deck:disconnect', {})
     scheduleReconnect()
   })
 
-  const sendInfo = () => sendToRenderer('deck:info', {
-    model:        deviceInfo.model,
-    productName:  newDeck.PRODUCT_NAME,
-    serialNumber: deviceInfo.serialNumber,
-    rows,
-    cols,
-    iconSize: ICON_SIZE ?? 72,
-  })
+  const sendInfo = () => {
+    deviceInfoCache = {
+      model:        deviceInfo.model,
+      productName:  newDeck.PRODUCT_NAME,
+      serialNumber: deviceInfo.serialNumber,
+      rows,
+      cols,
+      iconSize: ICON_SIZE ?? 72,
+    }
+    sendToRenderer('deck:info', deviceInfoCache)
+  }
 
   if (mainWindow?.webContents.isLoading()) {
     mainWindow.webContents.once('did-finish-load', sendInfo)
