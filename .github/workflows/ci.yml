@@ -32,6 +32,8 @@ jobs:
     name: Build Linux DEB
     runs-on: ubuntu-22.04
     needs: test
+    permissions:
+      actions: write   # required to list and delete artifacts
 
     steps:
       - name: Checkout
