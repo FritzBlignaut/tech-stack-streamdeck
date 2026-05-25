@@ -85,7 +85,7 @@ jobs:
           retention-days: 30
 
       - name: Delete old artifacts (keep 5 most recent)
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data } = await github.rest.actions.listArtifactsForRepo({
