@@ -77,7 +77,7 @@ jobs:
         run: npx electron-builder --linux deb --publish=never
 
       - name: Upload DEB artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tech-stack-streamdeck-linux-deb
           path: dist-electron/*.deb
