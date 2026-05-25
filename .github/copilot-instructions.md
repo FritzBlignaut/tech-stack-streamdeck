@@ -2,6 +2,23 @@
 
 > **Precedence rule:** In case of conflict, Core Principles override Workflow Orchestration, which overrides Task Management defaults.
 
+---
+
+## PRE-FLIGHT — MANDATORY ON EVERY PROMPT, NO EXCEPTIONS
+
+Before writing any plan, any code, any response — even for read-only or trivial requests — execute ALL of the following steps in order:
+
+1. **Read lessons** — Use `read_file` to load `.github/instructions/lessons.instructions.md` in full. Apply every relevant lesson to the current task.
+2. **Check branch** — Run `git branch --show-current` in the terminal. Show the result to the user.
+3. **Branch gate** — If the current branch is `develop` or `main`:
+   - If the task could modify ANY file → invoke the **Branch Manager** agent immediately to create an appropriate branch, then run `git branch --show-current` again to confirm the switch before proceeding.
+   - If the task is purely read-only (no file changes) → proceed, but state "read-only — no changes will be made."
+4. **After Branch Manager** — Always verify the branch switched with `git branch --show-current`. Never trust the agent's return message alone.
+
+**This pre-flight is not optional, not skippable, and not shortened for "simple" tasks. Every prompt. Always.**
+
+---
+
 ## Workflow Orchestration
 
 ### 1. Plan Before Implementing
