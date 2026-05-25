@@ -2045,6 +2045,14 @@ export default function App() {
   const [pressedKey,    setPressedKey]    = useState(null)
   const [toggledButtons, setToggledButtons] = useState({}) // { [index]: true } = icon2 latched on
   const [sleeping,      setSleeping]      = useState(false)
+  // Incremented on every wake event. Keying the redraw useEffect on this counter
+  // avoids a React 18 batching bug: when sleep→wake→sleep→wake happens faster
+  // than a render cycle, setSleeping net-equals its previous value so the old
+  // useEffect([sleeping]) never fires and hardware buttons are never redrawn.
+  const [wakeRevision,  setWakeRevision]  = useState(0)
+  // Ref that mirrors 'sleeping' — synchronously readable inside closures/callbacks
+  // without stale-closure risk. Updated alongside setSleeping().
+  const sleepingRef = useRef(false)
   const [pages,         setPages]         = useState([{}])   // array of page button-config objects
   const [currentPage,   setCurrentPage]   = useState(0)
   const [folderPath,    setFolderPath]    = useState([])     // indices into nested folders
@@ -2126,7 +2134,7 @@ export default function App() {
         c.fillText(op === 'raise' ? 'VOL +' : 'VOL -', iconSize / 2, Math.round(iconSize * 0.76))
         setLivePreviews(prev => ({ ...prev, [index]: cvs.toDataURL() }))
         const { data } = c.getImageData(0, 0, iconSize, iconSize)
-        window.streamDeck?.setButtonIcon(index, Array.from(data))
+        window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
         return
       }
     }
@@ -2150,7 +2158,7 @@ export default function App() {
         c.fillText(MEDIA_LABELS[cmd] ?? cmd.toUpperCase(), iconSize / 2, Math.round(iconSize * 0.78))
         setLivePreviews(prev => ({ ...prev, [index]: cvs.toDataURL() }))
         const { data } = c.getImageData(0, 0, iconSize, iconSize)
-        window.streamDeck?.setButtonIcon(index, Array.from(data))
+        window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
         return
       }
     }
@@ -2173,7 +2181,7 @@ export default function App() {
         c.fillText(label, iconSize / 2, Math.round(iconSize * 0.78))
         setLivePreviews(prev => ({ ...prev, [index]: cvs.toDataURL() }))
         const { data } = c.getImageData(0, 0, iconSize, iconSize)
-        window.streamDeck?.setButtonIcon(index, Array.from(data))
+        window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
         return
       } else {
         startObsStatusDisplay(index, config); return
@@ -2199,6 +2207,7 @@ export default function App() {
     if (iconDataUrl) {
       const img = new Image()
       await new Promise(res => { img.onload = res; img.src = iconDataUrl })
+      if (sleepingRef.current) return   // sleep fired while image was decoding — discard stale draw
       ctx.drawImage(img, 0, 0, iconSize, iconSize)
     } else {
       ctx.fillStyle = bgColor || '#000000'
@@ -2217,7 +2226,7 @@ export default function App() {
     }
 
     const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
-    window.streamDeck.setButtonIcon(index, Array.from(data))
+    window.streamDeck.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
   }
 
   // Ref always points to the latest drawHardwareButton (captures current iconSize)
@@ -2280,12 +2289,14 @@ export default function App() {
     dynamicButtonsRef.current[index] = { token, timer: null }
     const { format = 'HH:MM', bgColor = '#000000', textColor = '#ffffff' } = config?.action ?? {}
 
+    // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
+    const canvas = document.createElement('canvas')
+    canvas.width  = iconSize
+    canvas.height = iconSize
+    const ctx = canvas.getContext('2d')
+
     const drawClock = () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
-      const canvas = document.createElement('canvas')
-      canvas.width  = iconSize
-      canvas.height = iconSize
-      const ctx = canvas.getContext('2d')
 
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, iconSize, iconSize)
@@ -2306,8 +2317,8 @@ export default function App() {
       })
 
       const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
-      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
-      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      if (!sleepingRef.current) setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
 
       // Align tick to the next second boundary
       const msToNext = 1000 - (Date.now() % 1000)
@@ -2323,15 +2334,17 @@ export default function App() {
     dynamicButtonsRef.current[index] = { token, timer: null }
     const { bgColor = '#000000', textColor = '#00ff88', showCpu = true, showRam = true } = config?.action ?? {}
 
+    // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
+    const canvas = document.createElement('canvas')
+    canvas.width  = iconSize
+    canvas.height = iconSize
+    const ctx = canvas.getContext('2d')
+
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
       const stats = await window.streamDeck?.getSystemStats?.() ?? {}
       if (dynamicButtonsRef.current[index]?.token !== token) return
 
-      const canvas = document.createElement('canvas')
-      canvas.width  = iconSize
-      canvas.height = iconSize
-      const ctx = canvas.getContext('2d')
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, iconSize, iconSize)
 
@@ -2352,8 +2365,8 @@ export default function App() {
       lines.forEach((line, i) => ctx.fillText(line, iconSize / 2, lineHeight * (i + 1)))
 
       const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
-      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
-      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      if (!sleepingRef.current) setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
       dynamicButtonsRef.current[index].timer = setTimeout(draw, 2000)
     }
 
@@ -2366,15 +2379,17 @@ export default function App() {
     dynamicButtonsRef.current[index] = { token, timer: null }
     const { bgColor = '#000000', textColor = '#00aaff', sink = '@DEFAULT_SINK@' } = config?.action ?? {}
 
+    // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
+    const canvas = document.createElement('canvas')
+    canvas.width  = iconSize
+    canvas.height = iconSize
+    const ctx = canvas.getContext('2d')
+
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
       const result = await window.streamDeck?.getVolume?.(sink) ?? {}
       if (dynamicButtonsRef.current[index]?.token !== token) return
 
-      const canvas = document.createElement('canvas')
-      canvas.width  = iconSize
-      canvas.height = iconSize
-      const ctx = canvas.getContext('2d')
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, iconSize, iconSize)
 
@@ -2401,8 +2416,8 @@ export default function App() {
       ctx.fillRect(barX, barY, Math.round(barW * pct / 100), barH)
 
       const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
-      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
-      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      if (!sleepingRef.current) setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
       dynamicButtonsRef.current[index].timer = setTimeout(draw, 2000)
     }
 
@@ -2415,6 +2430,12 @@ export default function App() {
     dynamicButtonsRef.current[index] = { token, timer: null }
     const { bgColor = '#000000', sink = '@DEFAULT_SINK@' } = config?.action ?? {}
 
+    // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
+    const canvas = document.createElement('canvas')
+    canvas.width  = iconSize
+    canvas.height = iconSize
+    const ctx = canvas.getContext('2d')
+
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
       const result = await window.streamDeck?.getMute?.(sink) ?? {}
@@ -2422,10 +2443,6 @@ export default function App() {
 
       const muted = result.muted ?? false
 
-      const canvas = document.createElement('canvas')
-      canvas.width  = iconSize
-      canvas.height = iconSize
-      const ctx = canvas.getContext('2d')
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, iconSize, iconSize)
 
@@ -2444,8 +2461,8 @@ export default function App() {
       ctx.fillText(muted ? 'MUTED' : 'SOUND ON', iconSize / 2, Math.round(iconSize * 0.82))
 
       const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
-      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
-      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      if (!sleepingRef.current) setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
       dynamicButtonsRef.current[index].timer = setTimeout(draw, 1000)
     }
 
@@ -2458,15 +2475,17 @@ export default function App() {
     dynamicButtonsRef.current[index] = { token, timer: null }
     const { bgColor = '#000000', textColor = '#ffffff', player = '%any' } = config?.action ?? {}
 
+    // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
+    const canvas = document.createElement('canvas')
+    canvas.width  = iconSize
+    canvas.height = iconSize
+    const ctx = canvas.getContext('2d')
+
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
       const info = await window.streamDeck?.playerctlStatus?.(player) ?? null
       if (dynamicButtonsRef.current[index]?.token !== token) return
 
-      const canvas = document.createElement('canvas')
-      canvas.width  = iconSize
-      canvas.height = iconSize
-      const ctx = canvas.getContext('2d')
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, iconSize, iconSize)
 
@@ -2515,8 +2534,8 @@ export default function App() {
       }
 
       const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
-      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
-      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      if (!sleepingRef.current) setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
       dynamicButtonsRef.current[index].timer = setTimeout(draw, 3000)
     }
 
@@ -2528,6 +2547,12 @@ export default function App() {
     const token = {}
     dynamicButtonsRef.current[index] = { token, timer: null }
     const { bgColor = '#000000' } = config?.action ?? {}
+
+    // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
+    const canvas = document.createElement('canvas')
+    canvas.width  = iconSize
+    canvas.height = iconSize
+    const ctx = canvas.getContext('2d')
 
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
@@ -2558,10 +2583,6 @@ export default function App() {
 
       if (dynamicButtonsRef.current[index]?.token !== token) return
 
-      const canvas = document.createElement('canvas')
-      canvas.width  = iconSize
-      canvas.height = iconSize
-      const ctx = canvas.getContext('2d')
       ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, iconSize, iconSize)
 
@@ -2586,8 +2607,8 @@ export default function App() {
       ctx.fillText(label, iconSize / 2, Math.round(iconSize * 0.64))
 
       const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
-      setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
-      window.streamDeck?.setButtonIcon(index, Array.from(data))
+      if (!sleepingRef.current) setLivePreviews(prev => ({ ...prev, [index]: canvas.toDataURL() }))
+      window.streamDeck?.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
       dynamicButtonsRef.current[index].timer = setTimeout(draw, 3000)
     }
 
@@ -2775,12 +2796,20 @@ export default function App() {
   useEffect(() => {
     const connect = async () => {
       if (obsConnectedRef.current) return
+      // Declare obs before try so the catch block can call obs.disconnect()
+      // on the newly-created (but failed) instance — not the stale obsRef.current.
+      let obs = null
       try {
-        const obs = new OBSWebSocket()
+        obs = new OBSWebSocket()
         obs.on('ConnectionClosed', () => {
+          // Guard: only act if this specific obs instance is the one we stored.
+          // For a failed initial connect obs is never stored in obsRef, so this
+          // returns early and avoids creating a second (duplicate) retry timer.
+          if (obsRef.current !== obs) return
           obsConnectedRef.current = false
           obsRef.current = null
           setObsScenes([])
+          if (obsReconnectTimerRef.current != null) clearTimeout(obsReconnectTimerRef.current)
           obsReconnectTimerRef.current = setTimeout(() => obsConnectFnRef.current?.(), 5000)
         })
         // Race the connect against a 3-second timeout so a firewalled / slow port
@@ -2809,13 +2838,16 @@ export default function App() {
         obs.on('InputCreated',               ()     => obs.call('GetInputList').then(r => setObsInputs((r.inputs ?? []).map(i => i.inputName).filter(Boolean))).catch(() => {}))
         obs.on('InputRemoved',               ()     => obs.call('GetInputList').then(r => setObsInputs((r.inputs ?? []).map(i => i.inputName).filter(Boolean))).catch(() => {}))
       } catch {
-        // OBS not running / not reachable — will retry after 5 s
-        try { obsRef.current?.disconnect() } catch {}
+        // OBS not running / not reachable — will retry after 5 s.
+        // Disconnect the new obs instance (not obsRef.current which is null here).
+        try { obs?.disconnect() } catch {}
+        obs = null
         obsRef.current = null
         setObsScenes([])
         setObsSceneCollections([])
         setObsInputs([])
         setObsTransitions([])
+        if (obsReconnectTimerRef.current != null) clearTimeout(obsReconnectTimerRef.current)
         obsReconnectTimerRef.current = setTimeout(() => obsConnectFnRef.current?.(), 5000)
       }
     }
@@ -2985,24 +3017,28 @@ export default function App() {
         }
       }
     })
-    const offSleep       = window.streamDeck.onSleep(() => { stopAllGifAnimationsRef.current?.(); stopAllDynamicButtonsRef.current?.(); setSleeping(true) })
-    const offWake        = window.streamDeck.onWake(()  => setSleeping(false))
+    const offSleep       = window.streamDeck.onSleep(() => { console.log('[Renderer] Sleep received'); sleepingRef.current = true;  stopAllGifAnimationsRef.current?.(); stopAllDynamicButtonsRef.current?.(); setSleeping(true); setSelectedKey(null) })
+    const offWake        = window.streamDeck.onWake(()  => { console.log('[Renderer] Wake received');  sleepingRef.current = false; setSleeping(false); setWakeRevision(r => r + 1) })
     const offDisconnect  = window.streamDeck.onDisconnect?.(() => {
       stopAllGifAnimationsRef.current?.()
       stopAllDynamicButtonsRef.current?.()
       setDevice(null)
+      sleepingRef.current = false
       setSleeping(false)
     })
     return () => { offInfo(); offDown(); offUp(); offSleep(); offWake(); offDisconnect?.() }
   }, [])
 
-  // When waking, re-draw every hardware button with the stored config
+  // When waking, re-draw every hardware button with the stored config.
+  // Keyed on wakeRevision (not sleeping) so it fires even when rapid
+  // sleep/wake cycles cause React to batch sleeping back to its previous value.
   useEffect(() => {
-    if (sleeping) return
-    Object.entries(buttonConfigsRef.current).forEach(([idx, cfg]) => {
+    const entries = Object.entries(buttonConfigsRef.current)
+    console.log(`[Renderer] Wake redraw rev=${wakeRevision} — ${entries.length} button(s)`)
+    entries.forEach(([idx, cfg]) => {
       drawHardwareButton(Number(idx), cfg)
     })
-  }, [sleeping]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wakeRevision]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // On reconnect: hardware is dark — redraw all buttons from current config
   useEffect(() => {
