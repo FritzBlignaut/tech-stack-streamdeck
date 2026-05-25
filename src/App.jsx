@@ -3120,7 +3120,7 @@ export default function App() {
               <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.27 1.27M11.33 11.33l1.27 1.27M3.4 12.6l1.27-1.27M11.33 4.67l1.27-1.27" />
             </svg>
           </button>
-          {appVersion && <span className="app-version">v{appVersion}</span>}
+          {appVersion && <span className="app-version">v{appVersion}-{__GIT_HASH__}</span>}
         </div>
       </header>
 
