@@ -685,8 +685,8 @@ async function connectDeck() {
       if (_busy) return
       _busy = true
       try { await toggleSleep() } finally { _busy = false }
-    }, 60000)
-    console.log('[Stress] Auto sleep/wake every 60s (SLEEP_STRESS=1) — stop with Ctrl+C')
+    }, 5000)
+    console.log('[Stress] Auto sleep/wake every 5s (SLEEP_STRESS=1) — stop with Ctrl+C')
   }
 
   newDeck.on('down', async (control) => {
