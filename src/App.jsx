@@ -3064,6 +3064,7 @@ export default function App() {
       {/* ── Topbar ── */}
       <header className="topbar">
         <div className="topbar-left">
+          <img src="./tss.png" className="app-logo" alt="TSS" />
           <ProfileSwitcher
             activeProfile={activeProfile}
             profiles={profiles}

@@ -13,6 +13,14 @@
 }
 
 /* ─── Topbar ─────────────────────────────────────────────── */
+.app-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .topbar {
   display: flex;
   align-items: center;
