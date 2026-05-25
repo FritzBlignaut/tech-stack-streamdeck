@@ -4,6 +4,15 @@ on:
   push:
     branches:
       - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+
+# Least-privilege default: all jobs get read-only access unless overridden
+permissions:
+  contents: read
 
 jobs:
   # ─── Job 1: Run all unit tests ────────────────────────────────────────────────
