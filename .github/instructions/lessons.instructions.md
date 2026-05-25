@@ -88,3 +88,16 @@ This ensures work is isolated, traceable to the issue, and can be reviewed via a
 - **Explore** — use for codebase research to keep the main context clean.
 
 **Never skip an agent** because the task "seems simple." Predictability and consistency are the goal.
+
+## 2026-05-25 — Pre-flight checklist is step 0, not optional, not abbreviated
+
+**Mistake:** Trusted the Branch Manager agent's return message ("Branch created: feature/discord-plugin") as proof that the terminal was on that branch. Did not run `git branch --show-current` before making changes. Also did not read `lessons.instructions.md` at the start of the response. Changes landed on the correct branch by luck, but the process was broken.
+
+**Rule:** The pre-flight block in `copilot-instructions.md` executes for EVERY prompt, including trivial ones. It is not a "session start" thing — it fires at the top of every single response before any planning or code. Steps are non-negotiable:
+
+1. `read_file` → `.github/instructions/lessons.instructions.md` (full file, every prompt)
+2. Run `git branch --show-current` in the terminal, print the result
+3. If on `develop` or `main` and task may touch files → Branch Manager immediately, then verify branch AGAIN with `git branch --show-current`
+4. **Never trust an agent's success message as proof of branch switch** — always verify with the terminal command
+
+**Enforcement:** The user must NEVER have to remind GitHub Copilot to follow this workflow. It is automatic, silent, and unconditional.

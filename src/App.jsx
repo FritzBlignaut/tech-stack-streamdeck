@@ -3027,6 +3027,11 @@ export default function App() {
     const offUp = window.streamDeck.onKeyUp(({ index }) => {
       setPressedKey(p => p === index ? null : p)
       const config = buttonConfigsRef.current[index]
+      // Forward keyUp to plugin processes (needed for Push-to-Talk / Push-to-Mute)
+      if (config?.type?.includes('.')) {
+        const context = JSON.stringify({ index, actionUUID: config.type, pluginUUID: config.pluginUUID })
+        window.streamDeck?.sendToPlugin?.(config.pluginUUID, config.type, 'keyUp', { ...config }, context)
+      }
 
       if (config?.pressedIconDataUrl) {
         // Toggle: flip latch state and draw the newly-active icon
