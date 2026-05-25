@@ -31,6 +31,59 @@ let deck            = null   // current Stream Deck connection
 let isSleeping      = false  // hardware sleep state
 let reconnectTimer  = null   // USB reconnect polling timer
 let deviceInfoCache = null   // last known device info — for renderer reload recovery
+let _stressInterval = null   // set when SLEEP_STRESS=1; cleared on disconnect/quit
+
+// Per-button latest-wins HID write queue.
+// Only the most recent rgbaData per button index is retained — if a button is
+// written many times in quick succession (e.g. 15-button wake redraw + clock
+// tick), only ONE HID write is issued per drain cycle. This caps the queue at
+// 15 entries (one per button) regardless of how many sleep/wake cycles occur
+// while the window is in the tray, preventing the progressive backlog that
+// caused performance degradation after tray restore.
+const _hidQueue = new Map()   // index -> rgbaData | null  (null = fill black)
+let _hidDraining = false
+
+function enqueueHIDWrite(index, rgbaData) {
+  const before = _hidQueue.size
+  _hidQueue.set(index, rgbaData)
+  if (before === 0 && _hidQueue.size === 1) {
+    console.log(`[HID] Queue started — 1 button pending`)
+  } else if (_hidQueue.size !== before) {
+    console.log(`[HID] Enqueue button ${index} — queue depth: ${_hidQueue.size}`)
+  }
+  if (!_hidDraining) drainHIDQueue()
+}
+
+async function drainHIDQueue() {
+  if (_hidDraining) return
+  _hidDraining = true
+  const t0 = Date.now()
+  let count = 0
+  while (_hidQueue.size > 0) {
+    const [index, rgbaData] = _hidQueue.entries().next().value
+    _hidQueue.delete(index)
+    // Skip writes after sleep is triggered — clearPanel() will blank the device;
+    // any fill that races against it would either be overwritten or cause a
+    // partial-update artefact on the hardware.
+    if (!deck || isSleeping) continue
+    try {
+      // Wrap in a timeout — libusb can hang indefinitely on Linux if the
+      // device stops ACKing; without it _hidDraining stays true forever.
+      const write = rgbaData
+        ? deck.fillKeyBuffer(index, Buffer.from(rgbaData), { format: 'rgba' })
+        : deck.fillKeyColor(index, 0, 0, 0)
+      await Promise.race([
+        write,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('HID write timeout')), 2000)),
+      ])
+      count++
+    } catch (err) {
+      console.error(`[HID] Write error (button ${index}):`, err.message)
+    }
+  }
+  if (count > 0) console.log(`[HID] Drain complete — ${count} write(s) in ${Date.now() - t0}ms`)
+  _hidDraining = false
+}
 
 // ── Plugin system state ───────────────────────────────────────────────────────
 const pluginProcesses = new Map()  // pluginUUID -> ChildProcess
@@ -91,7 +144,8 @@ function createTrayIconPng() {
 function doQuit() {
   if (isQuitting) return
   isQuitting = true
-  if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null }
+  if (reconnectTimer)  { clearInterval(reconnectTimer);  reconnectTimer  = null }
+  if (_stressInterval) { clearInterval(_stressInterval); _stressInterval = null }
   for (const child of pluginProcesses.values()) { try { child.kill() } catch {} }
   pluginProcesses.clear()
   if (tray) { tray.destroy(); tray = null }           // remove icon immediately
@@ -192,7 +246,11 @@ function createWindow() {
 
   // Hide to tray on close unless a real quit was requested
   mainWindow.on('close', e => {
-    if (!isQuitting) { e.preventDefault(); mainWindow.hide() }
+    if (!isQuitting) { e.preventDefault(); mainWindow.hide(); console.log('[App] Window hidden to tray') }
+  })
+
+  mainWindow.on('show', () => {
+    console.log(`[App] Window shown from tray — HID queue depth: ${_hidQueue.size}, draining: ${_hidDraining}`)
   })
 
   // If the renderer process crashes, reload it automatically
@@ -202,6 +260,13 @@ function createWindow() {
       console.log('[App] Reloading renderer…')
       mainWindow.webContents.reload()
     }
+  })
+
+  // Forward renderer console output to main-process stdout so [Renderer] logs
+  // appear in the terminal during `npm run test:stress` (levels: 0=verbose,1=info,2=warn,3=error)
+  mainWindow.webContents.on('console-message', (_, level, message) => {
+    const tag = level === 2 ? '[Renderer:warn]' : level >= 3 ? '[Renderer:err]' : '[Renderer]'
+    console.log(`${tag} ${message}`)
   })
 
   // After any load/reload, re-send device info if the deck is already connected
@@ -286,6 +351,37 @@ let lastCpuTimes = null
 
 
 
+// ── Sleep toggle — shared by the IPC handler and the stress-test interval ──────
+async function toggleSleep() {
+  if (!deck) return
+  if (isSleeping) {
+    isSleeping = false
+    console.log('[StreamDeck] Wake (action) — restoring brightness…')
+    const t0 = Date.now()
+    try { await deck.setBrightness(100) } catch (err) { console.error('[StreamDeck] Failed to restore brightness on wake:', err.message) }
+    console.log(`[StreamDeck] Brightness restored in ${Date.now() - t0}ms — notifying renderer`)
+    sendToRenderer('deck:wake', {})
+  } else {
+    isSleeping = true
+    _hidQueue.clear()   // discard any pending redraws — no new writes while sleeping
+    // Do NOT clearPanel() here: that queues 15 HID writes which can hang in the
+    // libusb thread and block every subsequent fillKeyBuffer on wake.  Just dim
+    // the display; the last-drawn button images stay on the hardware but are
+    // invisible at brightness 0.  On wake setBrightness(100) makes them
+    // instantly visible again, then the wake-redraw refreshes any stale content.
+    try {
+      await Promise.race([
+        deck.setBrightness(0),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('setBrightness(0) timeout')), 2000)),
+      ])
+    } catch (err) {
+      console.error('[StreamDeck] setBrightness(0) error on sleep:', err.message)
+    }
+    sendToRenderer('deck:sleep', {})   // always notify renderer even if HID op failed
+    console.log('[StreamDeck] Sleep (action)')
+  }
+}
+
 // ── IPC handlers — registered once; use module-level deck/state ─────────────
 function registerIpcHandlers() {
   // Hotkey via xdotool (Linux)
@@ -339,21 +435,7 @@ function registerIpcHandlers() {
     })
   })
 
-  ipcMain.handle('action:sleep-toggle', async () => {
-    if (!deck) return
-    if (isSleeping) {
-      isSleeping = false
-      sendToRenderer('deck:wake', {})
-      console.log('[StreamDeck] Wake (action)')
-      try { await deck.setBrightness(100) } catch (err) { console.error('[StreamDeck] Failed to restore brightness on wake:', err.message) }
-    } else {
-      isSleeping = true
-      await deck.clearPanel()
-      await deck.setBrightness(0)
-      sendToRenderer('deck:sleep', {})
-      console.log('[StreamDeck] Sleep (action)')
-    }
-  })
+  ipcMain.handle('action:sleep-toggle', () => toggleSleep())
 
   ipcMain.handle('dialog:open-file', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: 'Select Application', properties: ['openFile'] })
@@ -464,10 +546,9 @@ function registerIpcHandlers() {
     catch (e) { return { ok: false, error: e.message } }
   })
 
-  ipcMain.handle('button:setIcon', async (_, { index, rgbaData }) => {
-    if (!deck) return
-    if (rgbaData) await deck.fillKeyBuffer(index, Buffer.from(rgbaData), { format: 'rgba' })
-    else          await deck.fillKeyColor(index, 0, 0, 0)
+  ipcMain.handle('button:setIcon', (_, { index, rgbaData }) => {
+    enqueueHIDWrite(index, rgbaData)
+    // Renderer never awaits this result — fire-and-forget from renderer side
   })
 
   // ── Plugin 2: CPU / RAM stats ──────────────────────────────────────────────
@@ -582,6 +663,9 @@ async function connectDeck() {
 
   deck       = newDeck
   isSleeping = false
+  _hidQueue.clear()   // reset queue — discard any stale writes from prior connection
+  _hidDraining = false
+  clearInterval(_stressInterval); _stressInterval = null  // reset on reconnect
 
   const buttonControls = newDeck.CONTROLS.filter(c => c.type === 'button')
   const rows = Math.max(...buttonControls.map(c => c.row)) + 1
@@ -595,12 +679,24 @@ async function connectDeck() {
   await newDeck.setBrightness(100)
   console.log('[StreamDeck] Device ready')
 
+  if (process.env.SLEEP_STRESS === '1') {
+    let _busy = false
+    _stressInterval = setInterval(async () => {
+      if (_busy) return
+      _busy = true
+      try { await toggleSleep() } finally { _busy = false }
+    }, 5000)
+    console.log('[Stress] Auto sleep/wake every 5s (SLEEP_STRESS=1) — stop with Ctrl+C')
+  }
+
   newDeck.on('down', async (control) => {
     if (isSleeping) {
       isSleeping = false
-      sendToRenderer('deck:wake', {})
-      console.log('[StreamDeck] Wake')
+      console.log('[StreamDeck] Wake (hardware) — restoring brightness…')
+      const t0 = Date.now()
       try { await newDeck.setBrightness(100) } catch (err) { console.error('[StreamDeck] Failed to restore brightness on wake:', err.message) }
+      console.log(`[StreamDeck] Brightness restored in ${Date.now() - t0}ms — notifying renderer`)
+      sendToRenderer('deck:wake', {})
       return
     }
     console.log(`[StreamDeck] KEY DOWN  index=${control.index}  row=${control.row}  col=${control.column}`)
@@ -615,6 +711,7 @@ async function connectDeck() {
 
   newDeck.on('error', async (err) => {
     if (deck !== newDeck) return  // stale handler from a previous connection
+    clearInterval(_stressInterval); _stressInterval = null
     console.error('[StreamDeck] Device error — treating as disconnect:', err.message ?? err)
     deck            = null
     isSleeping      = false
