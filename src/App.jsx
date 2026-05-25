@@ -270,7 +270,7 @@ function ProfileSwitcher({ activeProfile, profiles, onSwitch, onCreate, onDelete
 // ─── Actions Panel ──────────────────────────────────────────
 function ActionsPanel({ pluginManifests = [] }) {
   const [search, setSearch]     = useState('')
-  const [expanded, setExpanded] = useState({ streamdeck: true, system: true })
+  const [expanded, setExpanded] = useState({ streamdeck: true })
 
   const toggle = id => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
 
@@ -354,13 +354,15 @@ function ActionsPanel({ pluginManifests = [] }) {
 }
 
 // ─── Button Grid ────────────────────────────────────────────
-export function ButtonGrid({ rows, cols, selectedKey, pressedKey, toggledButtons = {}, onSelectKey, buttonConfigs, onContextMenu, onDropAction, livePreviews = {} }) {
+export function ButtonGrid({ rows, cols, selectedKey, pressedKey, toggledButtons = {}, onSelectKey, buttonConfigs, onContextMenu, onDropAction, onMoveButton, livePreviews = {} }) {
   const [dragOverIndex, setDragOverIndex] = useState(null)
+  const [draggingFrom,  setDraggingFrom]  = useState(null)
 
   return (
     <div className="button-grid" style={{ '--cols': cols }}>
       {Array.from({ length: rows * cols }, (_, i) => {
         const cfg        = buttonConfigs?.[i]
+        const hasContent = !!(cfg?.action || cfg?.title || cfg?.iconDataUrl)
         // While physically held, show pressed icon. Otherwise, show toggled icon if latched.
         const isPhysicallyPressed = pressedKey === i
         const isLatched           = !!toggledButtons[i]
@@ -372,9 +374,10 @@ export function ButtonGrid({ rows, cols, selectedKey, pressedKey, toggledButtons
             key={i}
             className={[
               'deck-btn',
-              selectedKey   === i ? 'selected'  : '',
-              pressedKey    === i ? 'pressed'   : '',
-              dragOverIndex === i ? 'drag-over' : '',
+              selectedKey   === i ? 'selected'     : '',
+              pressedKey    === i ? 'pressed'      : '',
+              dragOverIndex === i && draggingFrom !== i ? 'drag-over' : '',
+              draggingFrom  === i ? 'drag-source'  : '',
               previewSrc                     ? 'has-icon'  : '',
               cfg?.action?.type === 'folder' ? 'is-folder' : '',
             ].join(' ').trim()}
@@ -382,12 +385,23 @@ export function ButtonGrid({ rows, cols, selectedKey, pressedKey, toggledButtons
               backgroundImage: previewSrc ? `url(${previewSrc})` : 'none',
               backgroundColor: previewSrc ? 'transparent' : (cfg?.bgColor ?? '#262626'),
             }}
+            draggable={hasContent}
+            onDragStart={e => {
+              if (!hasContent) { e.preventDefault(); return }
+              e.dataTransfer.setData('application/stream-deck-button-move', String(i))
+              e.dataTransfer.effectAllowed = 'move'
+              setDraggingFrom(i)
+            }}
+            onDragEnd={() => { setDraggingFrom(null); setDragOverIndex(null) }}
             onClick={() => onSelectKey(i)}
             onContextMenu={e => { e.preventDefault(); onContextMenu(e, i) }}
             onDragOver={e => {
-              if (!e.dataTransfer.types.includes('application/stream-deck-action')) return
+              const isActionDrop = e.dataTransfer.types.includes('application/stream-deck-action')
+              const isButtonMove = e.dataTransfer.types.includes('application/stream-deck-button-move')
+              if (!isActionDrop && !isButtonMove) return
+              if (isButtonMove && draggingFrom === i) return // can't drop on self
               e.preventDefault()
-              e.dataTransfer.dropEffect = 'copy'
+              e.dataTransfer.dropEffect = isButtonMove ? 'move' : 'copy'
               setDragOverIndex(i)
             }}
             onDragLeave={e => {
@@ -397,8 +411,14 @@ export function ButtonGrid({ rows, cols, selectedKey, pressedKey, toggledButtons
             onDrop={e => {
               e.preventDefault()
               setDragOverIndex(null)
+              setDraggingFrom(null)
               const actionId = e.dataTransfer.getData('application/stream-deck-action')
-              if (actionId) onDropAction?.(i, actionId)
+              if (actionId) { onDropAction?.(i, actionId); return }
+              const fromStr = e.dataTransfer.getData('application/stream-deck-button-move')
+              if (fromStr !== '') {
+                const fromIndex = Number(fromStr)
+                if (!isNaN(fromIndex) && fromIndex !== i) onMoveButton?.(fromIndex, i)
+              }
             }}
             aria-label={`Button ${i + 1}`}
           >
@@ -2743,6 +2763,25 @@ export default function App() {
     setPages(prev => immutableSetButton(prev, currentPage, folderPath, index, next))
   }
 
+  // Swap two button configs within the current page/folder (used by grid drag-and-drop)
+  const moveButton = (fromIndex, toIndex) => {
+    const currentButtons = getButtonsAt(pagesRef.current, currentPageRef.current, folderPathRef.current)
+    const fromConfig = currentButtons[fromIndex] ?? null
+    const toConfig   = currentButtons[toIndex]   ?? null
+    setPages(prev => {
+      const step1 = immutableSetButton(prev, currentPageRef.current, folderPathRef.current, toIndex,   fromConfig)
+      return          immutableSetButton(step1, currentPageRef.current, folderPathRef.current, fromIndex, toConfig)
+    })
+    drawHardwareButton(fromIndex, toConfig)
+    drawHardwareButton(toIndex,   fromConfig)
+    // Keep the selection tracking the button that moved
+    setSelectedKey(prev => {
+      if (prev === fromIndex) return toIndex
+      if (prev === toIndex)   return fromIndex
+      return prev
+    })
+  }
+
   const clearButton = (index) => {
     drawHardwareButton(index, null)
     setPages(prev => immutableSetButton(prev, currentPage, folderPath, index, null))
@@ -3173,6 +3212,7 @@ export default function App() {
                   buttonConfigs={buttonConfigs}
                   livePreviews={livePreviews}
                   onContextMenu={(e, i) => setContextMenu({ x: e.clientX, y: e.clientY, keyIndex: i })}
+                  onMoveButton={moveButton}
                   onDropAction={(index, actionId) => {
                     const action = ACTION_DEFAULTS[actionId]
                     if (action) {

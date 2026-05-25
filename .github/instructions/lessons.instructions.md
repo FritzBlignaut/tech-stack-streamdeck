@@ -64,3 +64,27 @@ git checkout -b bug/<short-description>
 ```
 
 This ensures work is isolated, traceable to the issue, and can be reviewed via a PR before merging.
+
+## 2026-05-25 — NEVER commit or make changes directly on `develop` or `main`
+
+**Mistake:** Made app feature changes (collapsed menus, button drag-and-drop) directly on the `develop` branch instead of creating a feature branch first.
+
+**Rule:** `develop` and `main` are protected branches. ALL code changes — no matter how small — must be made on a `feature/<name>` or `bug/<name>` branch created from `develop`. Direct commits to `develop` or `main` are strictly forbidden.
+
+**Mandatory pre-work checklist before writing any code:**
+1. Run `git branch --show-current` — if the answer is `develop` or `main`, STOP.
+2. Use the **Branch Manager** agent to create an appropriately named branch.
+3. Switch to that branch, then begin implementation.
+
+**This applies to ALL changes including:** config files, CI workflows, documentation, hotfixes, and one-liners.
+
+## 2026-05-25 — GitHub Copilot instructions and agents are mandatory
+
+**Rule:** The workflow in `.github/copilot-instructions.md` and the lessons in this file are non-negotiable. They MUST be followed on every task, every time.
+
+**Agents must be used where applicable:**
+- **Branch Manager** — invoke before starting ANY implementation work to create the correct branch.
+- **GitHub Manager** — use for all GitHub operations (issues, PRs, labels). Never use GitKraken or third-party tools.
+- **Explore** — use for codebase research to keep the main context clean.
+
+**Never skip an agent** because the task "seems simple." Predictability and consistency are the goal.

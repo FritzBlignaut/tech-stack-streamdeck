@@ -531,6 +531,12 @@
   transform: scale(1.04);
 }
 
+.deck-btn.drag-source {
+  opacity: 0.4;
+  transform: scale(0.96);
+  box-shadow: none;
+}
+
 .deck-btn-index {
   font-size: 11px;
   color: #2e2e2e;
