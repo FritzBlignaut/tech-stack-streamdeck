@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: test
     permissions:
+      contents: read   # required for actions/checkout
       actions: write   # required to list and delete artifacts
 
     steps:
