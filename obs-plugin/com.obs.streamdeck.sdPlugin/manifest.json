@@ -1,0 +1,107 @@
+{
+  "UUID": "com.obs.streamdeck",
+  "Name": "OBS Studio",
+  "Version": "1.0.0",
+  "Author": "tech-stack-streamdeck",
+  "Description": "Control OBS Studio from your Stream Deck. Record, stream, switch scenes, manage sources, and more. Requires OBS WebSocket Server enabled in OBS → Tools → WebSocket Server Settings.",
+  "Category": "OBS Studio",
+  "CodePath": "bin/plugin.cjs",
+  "Actions": [
+    {
+      "UUID": "com.obs.streamdeck.record",
+      "Name": "Record",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Record" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.record-pause",
+      "Name": "Pause Recording",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Pause Rec" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.stream",
+      "Name": "Stream",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Stream" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.replay-buffer",
+      "Name": "Replay Buffer",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Replay" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.save-replay",
+      "Name": "Save Replay",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Save Replay" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.scene",
+      "Name": "Scene",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Scene" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.scene-collection",
+      "Name": "Scene Collection",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Collection" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.source-visibility",
+      "Name": "Source Visibility",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Source" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.mute",
+      "Name": "Mute",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Mute" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.media",
+      "Name": "Media Control",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Media" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.studio-mode",
+      "Name": "Studio Mode",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Studio Mode" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.push-to-program",
+      "Name": "Push to Program",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Push" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.filter",
+      "Name": "Source Filter",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Filter" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.screenshot",
+      "Name": "Screenshot",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Screenshot" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.transition",
+      "Name": "Transition",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Transition" }]
+    },
+    {
+      "UUID": "com.obs.streamdeck.chapter-marker",
+      "Name": "Chapter Marker",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [{ "Title": "Chapter" }]
+    }
+  ]
+}

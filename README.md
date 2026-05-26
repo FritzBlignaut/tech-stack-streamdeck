@@ -27,7 +27,7 @@ The **official Elgato Stream Deck software does not support Linux**. This projec
 - [Installation](#installation)
 - [Running the App](#running-the-app)
 - [USB Permissions (udev)](#usb-permissions-udev)
-- [Plugin Setup](#plugin-setup)
+- [Plugin System](#plugin-system)
 - [Gotchas & Known Limitations](#gotchas--known-limitations)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
@@ -70,16 +70,23 @@ The **official Elgato Stream Deck software does not support Linux**. This projec
 - Brightness control for sleep/wake.
 - Flash feedback on button press (blue circle).
 
-### Plugins
+### Built-in Plugins
 | Plugin | Actions / modes | Requires |
 |--------|----------------|----------|
 | **Volume** | Raise, Lower, Mute toggle, Live display (shows % and mute state) | `pactl` |
 | **Media Control** | Play/Pause, Next, Previous, Stop, Live track-info display | `playerctl` |
 | **Clock / Date** | Live clock on a button with a configurable format string (`HH:MM`, `DD/MM`, etc.) | — |
 | **CPU / RAM** | Live CPU% and RAM% display, updating every 2 s | — |
-| **OBS Studio** | Toggle recording, Toggle stream, Pause/resume recording, Switch scene (picks scene from a live dropdown when OBS is connected) | OBS WebSocket |
 
 All plugin buttons respect a custom icon or title — if you set one, it overrides the default dynamic display.
+
+### Installable Plugins
+OBS Studio and Discord support are distributed as separate `.sdPlugin` packages. Only install the ones you need.
+
+| Plugin | Actions | Requires |
+|--------|---------|----------|
+| **OBS Studio** (`obs-plugin/`) | Toggle record, toggle stream, pause recording, replay buffer, switch scene, switch collection, source visibility, mute, media control, studio mode, filter toggle, screenshot, transition, chapter marker | OBS WebSocket |
+| **Discord** (`discord-plugin/`) | Push-to-Talk, Mute, Deafen | `xdotool` |
 
 ---
 
@@ -116,12 +123,37 @@ These must be installed and available on your `$PATH`:
 
 ---
 
-## Plugin Setup
+## Plugin System
 
-### Volume (`pactl`)
+Plugins are `.sdPlugin` packages that the app discovers from `~/.config/tech-stack-streamdeck/plugins/`. Only install the plugins you actually need.
+
+### Installing a plugin
+
+```bash
+# Create the plugins directory if it doesn't exist
+mkdir -p ~/.config/tech-stack-streamdeck/plugins
+
+# Copy the desired plugin folder (example: OBS Studio)
+cp -r obs-plugin/com.obs.streamdeck.sdPlugin \
+  ~/.config/tech-stack-streamdeck/plugins/
+
+# Or for Discord:
+cp -r discord-plugin/com.discord.streamdeck.sdPlugin \
+  ~/.config/tech-stack-streamdeck/plugins/
+```
+
+Restart the app after installing a plugin. Installed plugin actions appear in the action picker under their own category.
+
+To uninstall, open the Plugin Browser in the app (toolbar icon) or delete the plugin folder from `~/.config/tech-stack-streamdeck/plugins/` and restart.
+
+---
+
+### Built-in plugin setup
+
+#### Volume (`pactl`)
 No setup needed beyond having `pactl` installed. Buttons target `@DEFAULT_SINK@` by default, which follows your system default audio output. You can override the sink name in the button settings.
 
-### Media Control (`playerctl`)
+#### Media Control (`playerctl`)
 Install `playerctl` and ensure your media player exposes an MPRIS D-Bus interface (most Linux players do: Spotify, Firefox, VLC, Rhythmbox, etc.).
 
 ```bash
@@ -133,12 +165,22 @@ playerctl -l
 
 Buttons can target a specific player name or use `%any` (default) to control whatever is currently active.
 
-### OBS Studio
-1. Open OBS → **Tools → WebSocket Server Settings**
-2. Enable the WebSocket server (default port **4455**, no password required by default)
-3. The app auto-connects on startup and reconnects every 5 s if OBS is not running
+---
 
-The **Switch scene** action populates a live scene dropdown automatically when OBS is connected.
+### OBS Studio plugin
+
+1. Install the plugin (see [Installing a plugin](#installing-a-plugin) above)
+2. Open OBS → **Tools → WebSocket Server Settings**
+3. Enable the WebSocket server (default port **4455**, no password required by default)
+4. Assign OBS actions to buttons — the plugin connects to OBS automatically and retries every 5 s if OBS is not running
+
+The Scene, Scene Collection, Source, Input, and Transition pickers in the Property Inspector are populated live from OBS once connected.
+
+### Discord plugin
+
+1. Install the plugin (see [Installing a plugin](#installing-a-plugin) above)
+2. Ensure `xdotool` is installed (`sudo apt install xdotool`)
+3. Open Discord and assign Push-to-Talk / Mute / Deafen to buttons
 
 ---
 
@@ -256,7 +298,7 @@ sudo udevadm trigger
 | 14 | **`libudev-dev` version conflict** | On Ubuntu 24.04 / Mint 22.x, `libudev1` is sometimes at a newer patch version than what the package index offers, causing `apt install libudev-dev` to fail with unmet dependencies. See the [workaround in Installation](#libudev-version-conflict-ubuntu-2404--mint-22x) — it extracts only the header and linker symlink without downgrading any system packages. |
 | 10 | **Flatpak app IDs with `gtk-launch`** | Flatpak `.desktop` IDs (e.g. `com.obsproject.Studio`) work with the default `gtk-launch` mode in Open Application. Use **Direct** mode only for native binary paths. |
 | 11 | **`playerctl` is not bundled** | Must be installed separately via `apt`. Media control buttons silently do nothing if it is missing. Run `playerctl -l` to verify your player is visible. |
-| 12 | **OBS WebSocket must be enabled** | OBS does not enable its WebSocket server by default. Go to **Tools → WebSocket Server Settings** in OBS and turn it on. Without it, OBS buttons show "OBS OFF". |
+| 12 | **OBS plugin must be installed separately** | OBS Studio support is no longer built into the app. Copy `obs-plugin/com.obs.streamdeck.sdPlugin` to `~/.config/tech-stack-streamdeck/plugins/` first. Then enable the WebSocket server in OBS → **Tools → WebSocket Server Settings**. |
 | 13 | **Volume sink name** | The default `@DEFAULT_SINK@` tracks your system default output. If you use a specific audio device, enter its exact sink name (check `pactl list short sinks`) in the Volume button settings. |
 
 ---
@@ -271,7 +313,6 @@ sudo udevadm trigger
 | GIF decoding | [gifuct-js](https://github.com/matt-way/gifuct-js) 2 |
 | Native USB | [node-hid](https://github.com/node-hid/node-hid) (via `@elgato-stream-deck/node`) |
 | Hotkeys | `xdotool` (system dependency) |
-| OBS integration | [obs-websocket-js](https://github.com/obs-websocket-community-projects/obs-websocket-js) 5 |
 | Media control | `playerctl` (system dependency) |
 | Volume control | `pactl` (system dependency) |
 | Styling | Plain CSS (no framework) |
@@ -283,12 +324,24 @@ sudo udevadm trigger
 ```
 tech-stack-streamdeck/
 ├── electron/
-│   ├── main.cjs          # Main process — device connection, IPC handlers, tray
+│   ├── main.cjs          # Main process — device connection, IPC handlers, tray, plugin loader
 │   └── preload.cjs       # contextBridge — exposes IPC to renderer
 ├── src/
 │   ├── App.jsx           # All UI components and application state
 │   ├── App.css           # Application styles
 │   └── main.jsx          # React entry point
+├── obs-plugin/
+│   └── com.obs.streamdeck.sdPlugin/
+│       ├── manifest.json # Plugin manifest (UUID, actions, metadata)
+│       ├── bin/
+│       │   └── plugin.cjs  # OBS WebSocket v5 client — zero npm deps
+│       └── ui/
+│           └── inspector.html  # Property Inspector UI for all 16 OBS actions
+├── discord-plugin/
+│   └── com.discord.streamdeck.sdPlugin/
+│       ├── manifest.json
+│       ├── bin/plugin.cjs
+│       └── ui/inspector.html
 ├── public/
 │   └── tech_stack_streamdeck.png
 ├── .github/
@@ -317,7 +370,8 @@ Before pushing to `develop`, validate packaged behaviour locally with `npm run t
 - [x] Phase 2 — Full UI, profiles, hardware icon drawing
 - [x] Phase 3 — Actions: Hotkey, Open Application, Open URL, Run Command, Multi Action, Switch Profile
 - [x] Phase 4 — Polish: drag-and-drop, context menu, pages, folders, animated icons, system tray, auto-reconnect
-- [x] Phase 5 — Built-in plugins: OBS Studio (record/stream/switch-scene), media control (playerctl/MPRIS), volume (pactl), clock/date, CPU/RAM
+- [x] Phase 5 — Built-in plugins: media control (playerctl/MPRIS), volume (pactl), clock/date, CPU/RAM
+- [x] Phase 6 — Installable plugin system: OBS Studio plugin (16 actions, zero npm deps), Discord plugin
 
 ---
 
