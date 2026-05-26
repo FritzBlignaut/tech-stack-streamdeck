@@ -678,7 +678,7 @@ function OpenAppEditor({ target, mode, onChange }) {
 }
 
 // ─── Sub-Action Row ─────────────────────────────────────────
-function SubActionRow({ subAction, onChange, onRemove }) {
+function SubActionRow({ subAction, onChange, onRemove, pageCount = 1 }) {
   const label = SUB_ACTION_TYPES.find(t => t.id === subAction.type)?.name ?? subAction.type
   return (
     <div className="sub-action-row">
@@ -737,6 +737,21 @@ function SubActionRow({ subAction, onChange, onRemove }) {
             <span className="delay-unit">ms</span>
           </div>
         )}
+        {subAction.type === 'page-switcher' && (
+          <div className="delay-input-row">
+            <label className="prop-label">Page</label>
+            <input
+              className="prop-input"
+              type="number"
+              min="1"
+              max={pageCount}
+              step="1"
+              value={(subAction.targetPage ?? 0) + 1}
+              onChange={e => onChange({ ...subAction, targetPage: Math.max(0, Math.min(pageCount - 1, Number(e.target.value) - 1)) })}
+            />
+            <span className="delay-unit">/ {pageCount}</span>
+          </div>
+        )}
         {subAction.type === 'sleep-toggle' && (
           <p className="action-hint">Puts the deck to sleep.</p>
         )}
@@ -746,7 +761,7 @@ function SubActionRow({ subAction, onChange, onRemove }) {
 }
 
 // ─── Multi Action Editor ─────────────────────────────────────
-function MultiActionEditor({ actions, onChange }) {
+function MultiActionEditor({ actions, onChange, pageCount = 1 }) {
   const [addingNew, setAddingNew] = useState(false)
 
   const addSubAction = (type) => {
@@ -772,6 +787,7 @@ function MultiActionEditor({ actions, onChange }) {
           subAction={sub}
           onChange={updated => updateAt(i, updated)}
           onRemove={() => removeAt(i)}
+          pageCount={pageCount}
         />
       ))}
 
@@ -802,21 +818,23 @@ const ENABLED_ACTIONS = new Set(['hotkey', 'open-app', 'open-url', 'run-cmd', 's
 
 // Sub-action types available inside a Multi Action (no nesting)
 const SUB_ACTION_TYPES = [
-  { id: 'hotkey',       name: 'Hotkey',           icon: '⌫' },
-  { id: 'open-app',     name: 'Open Application', icon: '⎈' },
-  { id: 'open-url',     name: 'Open URL',         icon: '⊕' },
-  { id: 'run-cmd',      name: 'Run Command',      icon: '›_' },
-  { id: 'sleep-toggle', name: 'Sleep',            icon: '☽' },
-  { id: 'delay',        name: 'Delay',            icon: '⏱' },
+  { id: 'hotkey',        name: 'Hotkey',           icon: '⌫' },
+  { id: 'open-app',      name: 'Open Application', icon: '⎈' },
+  { id: 'open-url',      name: 'Open URL',         icon: '⊕' },
+  { id: 'run-cmd',       name: 'Run Command',      icon: '›_' },
+  { id: 'page-switcher', name: 'Page',             icon: '⊞' },
+  { id: 'sleep-toggle',  name: 'Sleep',            icon: '☽' },
+  { id: 'delay',         name: 'Delay',            icon: '⏱' },
 ]
 
 const SUB_ACTION_DEFAULTS = {
-  'hotkey':       { type: 'hotkey',       keys: '' },
-  'open-app':     { type: 'open-app',     target: '', mode: 'gtk-launch' },
-  'open-url':     { type: 'open-url',     url: '' },
-  'run-cmd':      { type: 'run-cmd',      command: '' },
-  'sleep-toggle': { type: 'sleep-toggle' },
-  'delay':        { type: 'delay',        ms: 500 },
+  'hotkey':        { type: 'hotkey',        keys: '' },
+  'open-app':      { type: 'open-app',      target: '', mode: 'gtk-launch' },
+  'open-url':      { type: 'open-url',      url: '' },
+  'run-cmd':       { type: 'run-cmd',       command: '' },
+  'page-switcher': { type: 'page-switcher', targetPage: 0 },
+  'sleep-toggle':  { type: 'sleep-toggle' },
+  'delay':         { type: 'delay',         ms: 500 },
 }
 
 // Default configs for top-level button actions (used by drag-and-drop and the picker)
@@ -856,14 +874,15 @@ const ACTION_DEFAULTS = {
 }
 
 // Dispatches a single leaf action — returns a Promise
-function dispatchSubAction(sd, act) {
+function dispatchSubAction(sd, act, switchToPage) {
   if (!act || !sd) return Promise.resolve()
-  if (act.type === 'hotkey'       && act.keys)    return sd.executeHotkey(act.keys)
-  if (act.type === 'open-app'     && act.target)  return sd.openApplication(act.target, act.mode ?? 'gtk-launch')
-  if (act.type === 'open-url'     && act.url)     return sd.openUrl(act.url)
-  if (act.type === 'run-cmd'      && act.command) return sd.runCommand(act.command)
-  if (act.type === 'sleep-toggle')                return sd.sleepToggle()
-  if (act.type === 'delay')                       return new Promise(r => setTimeout(r, act.ms ?? 500))
+  if (act.type === 'hotkey'        && act.keys)    return sd.executeHotkey(act.keys)
+  if (act.type === 'open-app'      && act.target)  return sd.openApplication(act.target, act.mode ?? 'gtk-launch')
+  if (act.type === 'open-url'      && act.url)     return sd.openUrl(act.url)
+  if (act.type === 'run-cmd'       && act.command) return sd.runCommand(act.command)
+  if (act.type === 'page-switcher' && switchToPage) { switchToPage(act.targetPage ?? 0); return Promise.resolve() }
+  if (act.type === 'sleep-toggle')                  return sd.sleepToggle()
+  if (act.type === 'delay')                         return new Promise(r => setTimeout(r, act.ms ?? 500))
   return Promise.resolve()
 }
 
@@ -1123,6 +1142,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
         <MultiActionEditor
           actions={action.actions ?? []}
           onChange={actions => onChange({ action: { type: 'multi-action', actions } })}
+          pageCount={pageCount}
         />
       </div>
     )
@@ -2952,9 +2972,10 @@ export default function App() {
         exitFolderRef.current()
       } else if (action?.type === 'multi-action' && action.actions?.length) {
         const sd = window.streamDeck
+        const switchFn = switchToPageRef.current
         ;(async () => {
           for (const sub of action.actions) {
-            await dispatchSubAction(sd, sub)
+            await dispatchSubAction(sd, sub, switchFn)
           }
         })()
       } else if (action?.type === 'volume' && action.operation && action.operation !== 'display-only') {
