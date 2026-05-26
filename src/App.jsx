@@ -4,6 +4,45 @@ import OBSWebSocket from 'obs-websocket-js'
 import './App.css'
 import { getButtonsAt, immutableSetButton, formatClock } from './utils.js'
 
+// ─── Canvas utilities ────────────────────────────────────────
+function makeCanvas(size) {
+  const canvas = document.createElement('canvas')
+  canvas.width  = size
+  canvas.height = size
+  return { canvas, ctx: canvas.getContext('2d') }
+}
+
+function drawTitle(ctx, title, iconSize) {
+  if (!title) return
+  const fs = Math.round(iconSize * 0.15)
+  ctx.font          = `bold ${fs}px -apple-system, sans-serif`
+  ctx.fillStyle     = '#ffffff'
+  ctx.textAlign     = 'center'
+  ctx.textBaseline  = 'bottom'
+  ctx.shadowColor   = 'rgba(0,0,0,0.95)'
+  ctx.shadowBlur    = 5
+  ctx.shadowOffsetY = 1
+  ctx.fillText(title, iconSize / 2, iconSize - Math.round(iconSize * 0.04))
+  ctx.shadowColor   = 'transparent'
+  ctx.shadowBlur    = 0
+  ctx.shadowOffsetY = 0
+}
+
+// ─── Shared hardware-button redraw helper ─────────────────────
+// Iterates all rows×cols slots and calls drawFn(index, config) for each.
+function redrawButtons(configs = {}, rows, cols, drawFn) {
+  for (let i = 0; i < rows * cols; i++) drawFn(i, configs[i])
+}
+
+// ─── Plugin manifest → category list (used in both ActionsPanel and ActionSection) ──
+function pluginCategoriesToList(manifests) {
+  return manifests.map(p => ({
+    id:      p.UUID,
+    name:    p.Category || p.Name,
+    actions: (p.Actions || []).map(a => ({ id: a.UUID, name: a.Name, icon: '🔌' })),
+  }))
+}
+
 const DEVICE_MODEL_NAMES = {
   originalv2: 'Stream Deck Original V2',
   mk2:        'Stream Deck MK.2',
@@ -31,19 +70,16 @@ async function extractGifFrames(dataUrl, iconSize, title) {
     const gw = gif.lsd.width
     const gh = gif.lsd.height
 
-    // Native-size composite canvas
+    // Native-size composite canvas (rectangular — dimensions from GIF header)
     const native    = document.createElement('canvas')
     native.width    = gw
     native.height   = gh
     const nativeCtx = native.getContext('2d')
 
     // Output canvas scaled to iconSize
-    const out    = document.createElement('canvas')
-    out.width    = iconSize
-    out.height   = iconSize
-    const outCtx = out.getContext('2d')
+    const { canvas: out, ctx: outCtx } = makeCanvas(iconSize)
 
-    // Scratch canvas for patching
+    // Scratch canvas for patching (resized per-frame in loop)
     const patch    = document.createElement('canvas')
     const patchCtx = patch.getContext('2d')
 
@@ -63,20 +99,7 @@ async function extractGifFrames(dataUrl, iconSize, title) {
       outCtx.clearRect(0, 0, iconSize, iconSize)
       outCtx.drawImage(native, 0, 0, iconSize, iconSize)
 
-      if (title) {
-        const fs = Math.round(iconSize * 0.15)
-        outCtx.font          = `bold ${fs}px -apple-system, sans-serif`
-        outCtx.fillStyle     = '#ffffff'
-        outCtx.textAlign     = 'center'
-        outCtx.textBaseline  = 'bottom'
-        outCtx.shadowColor   = 'rgba(0,0,0,0.95)'
-        outCtx.shadowBlur    = 5
-        outCtx.shadowOffsetY = 1
-        outCtx.fillText(title, iconSize / 2, iconSize - Math.round(iconSize * 0.04))
-        outCtx.shadowColor   = 'transparent'
-        outCtx.shadowBlur    = 0
-        outCtx.shadowOffsetY = 0
-      }
+      drawTitle(outCtx, title, iconSize)
 
       result.push({
         rgbaData: Array.from(outCtx.getImageData(0, 0, iconSize, iconSize).data),
@@ -274,13 +297,7 @@ function ActionsPanel({ pluginManifests = [] }) {
 
   const toggle = id => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
 
-  const pluginCategories = pluginManifests.map(p => ({
-    id:      p.UUID,
-    name:    p.Category || p.Name,
-    actions: (p.Actions || []).map(a => ({ id: a.UUID, name: a.Name, icon: '🔌' })),
-  }))
-
-  const allCategories = [...ACTION_CATEGORIES, ...pluginCategories]
+  const allCategories = [...ACTION_CATEGORIES, ...pluginCategoriesToList(pluginManifests)]
 
   const filtered = allCategories
     .map(cat => ({
@@ -952,6 +969,16 @@ function dispatchSubAction(sd, act, switchToPage) {
   return Promise.resolve()
 }
 
+function RemoveActionButton({ onRemove }) {
+  return (
+    <button className="action-remove" onClick={onRemove} title="Remove action">
+      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
+        <path d="M1 1l10 10M11 1L1 11" />
+      </svg>
+    </button>
+  )
+}
+
 export function ActionSection({ action, onChange, profiles = [], pageCount = 1, onEnterFolder, obsScenes = [], obsInputs = [], obsTransitions = [], obsSceneCollections = [], pluginManifests = [] }) {
   const [picking, setPicking] = useState(false)
 
@@ -964,11 +991,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M8.5 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H10.5L8.5 0z" />
           </svg>
           <span>Folder</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <p className="action-hint">Press the button on hardware to enter the folder. In the editor, use the button below or click the button in the grid.</p>
         {onEnterFolder && (
@@ -992,11 +1015,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M9 2L3 6l6 4" />
           </svg>
           <span>Back</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <p className="action-hint">Returns to the parent folder or page when pressed.</p>
       </div>
@@ -1010,11 +1029,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M12.5 10A6 6 0 0 1 6 3.5a6 6 0 0 0 0 9 6 6 0 0 0 6.5-2.5z" />
           </svg>
           <span>Sleep</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <p className="action-hint">Puts the deck to sleep. Any button press wakes it.</p>
       </div>
@@ -1032,11 +1047,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M9 11h3" strokeLinecap="round" />
           </svg>
           <span>Run Command</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <textarea
           className="prop-input run-cmd-input"
@@ -1060,11 +1071,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M2 8h12M8 2c-2 2-3 4-3 6s1 4 3 6M8 2c2 2 3 4 3 6s-1 4-3 6" />
           </svg>
           <span>Open URL</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <input
           className="prop-input"
@@ -1087,11 +1094,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M4 7h1M7 7h1M10 7h1M4 10h8" strokeLinecap="round" />
           </svg>
           <span>Hotkey</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <HotkeyEditor
           value={action.keys ?? ''}
@@ -1111,11 +1114,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M5 7l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span>Open Application</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <OpenAppEditor
           target={action.target ?? ''}
@@ -1138,11 +1137,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <rect x="9" y="9" width="5" height="5" rx="1" />
           </svg>
           <span>Page Switcher</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <span className="prop-label-sm">Target page</span>
         <select
@@ -1167,11 +1162,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M3 8h8M7.5 5l3.5 3-3.5 3" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span>Switch Profile</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <span className="prop-label-sm">Target profile</span>
         <select
@@ -1199,11 +1190,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M9 5l4 3-4 3V5z" fill="currentColor" stroke="none" />
           </svg>
           <span>Multi Action</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <MultiActionEditor
           actions={action.actions ?? []}
@@ -1233,11 +1220,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M8 5v3.2l2.4 1.4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span>Clock / Date</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <span className="prop-label-sm">Format</span>
         <select
@@ -1281,11 +1264,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M3 11l2.5-4 2 2.5 2-4 2.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span>CPU / RAM</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <div className="prop-row" style={{ marginTop: 8 }}>
           <label className="prop-field-label">Background</label>
@@ -1324,11 +1303,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M10 5.5a3.5 3.5 0 0 1 0 5M12.5 3a6.5 6.5 0 0 1 0 10" strokeLinecap="round" />
           </svg>
           <span>Volume</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <span className="prop-label-sm">Action on press</span>
         <select className="prop-input" value={action.operation ?? 'display-only'}
@@ -1370,11 +1345,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
             <path d="M6 5.5l5 2.5-5 2.5V5.5z" fill="currentColor" stroke="none" />
           </svg>
           <span>Media Control</span>
-          <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-              <path d="M1 1l10 10M11 1L1 11" />
-            </svg>
-          </button>
+          <RemoveActionButton onRemove={() => onChange({ action: null })} />
         </div>
         <span className="prop-label-sm">Command on press</span>
         <select className="prop-input" value={action.command ?? 'play-pause'}
@@ -1407,11 +1378,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
         <circle cx="8" cy="8" r="3" fill="currentColor" stroke="none" />
       </svg>
       <span>{label}</span>
-      <button className="action-remove" onClick={() => onChange({ action: null })} title="Remove action">
-        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" width="9" height="9">
-          <path d="M1 1l10 10M11 1L1 11" />
-        </svg>
-      </button>
+      <RemoveActionButton onRemove={() => onChange({ action: null })} />
     </div>
   )
   const obsHint = <p className="action-hint">Auto-connects to OBS at localhost:4455. Enable WebSocket in OBS → Tools → WebSocket Server Settings.</p>
@@ -1706,12 +1673,7 @@ export function ActionSection({ action, onChange, profiles = [], pageCount = 1, 
   }
 
   // ── unassigned ──
-  const pluginCategories = pluginManifests.map(p => ({
-    id:      p.UUID,
-    name:    p.Category || p.Name,
-    actions: (p.Actions || []).map(a => ({ id: a.UUID, name: a.Name, icon: '🔌' })),
-  }))
-  const allCategories = [...ACTION_CATEGORIES, ...pluginCategories]
+  const allCategories = [...ACTION_CATEGORIES, ...pluginCategoriesToList(pluginManifests)]
 
   return (
     <div className="unassigned-action">
@@ -2305,10 +2267,7 @@ export default function App() {
       return
     }
 
-    const canvas = document.createElement('canvas')
-    canvas.width  = iconSize
-    canvas.height = iconSize
-    const ctx = canvas.getContext('2d')
+    const { canvas, ctx } = makeCanvas(iconSize)
 
     if (iconDataUrl) {
       const img = new Image()
@@ -2320,16 +2279,7 @@ export default function App() {
       ctx.fillRect(0, 0, iconSize, iconSize)
     }
 
-    if (title) {
-      ctx.font = `bold ${Math.round(iconSize * 0.15)}px -apple-system, sans-serif`
-      ctx.fillStyle = '#ffffff'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'bottom'
-      ctx.shadowColor = 'rgba(0,0,0,0.95)'
-      ctx.shadowBlur = 5
-      ctx.shadowOffsetY = 1
-      ctx.fillText(title, iconSize / 2, iconSize - Math.round(iconSize * 0.04))
-    }
+    drawTitle(ctx, title, iconSize)
 
     const { data } = ctx.getImageData(0, 0, iconSize, iconSize)
     window.streamDeck.setButtonIcon(index, new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
@@ -2396,10 +2346,7 @@ export default function App() {
     const { format = 'HH:MM', bgColor = '#000000', textColor = '#ffffff' } = config?.action ?? {}
 
     // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
-    const canvas = document.createElement('canvas')
-    canvas.width  = iconSize
-    canvas.height = iconSize
-    const ctx = canvas.getContext('2d')
+    const { canvas, ctx } = makeCanvas(iconSize)
 
     const drawClock = () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
@@ -2441,10 +2388,7 @@ export default function App() {
     const { bgColor = '#000000', textColor = '#00ff88', showCpu = true, showRam = true } = config?.action ?? {}
 
     // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
-    const canvas = document.createElement('canvas')
-    canvas.width  = iconSize
-    canvas.height = iconSize
-    const ctx = canvas.getContext('2d')
+    const { canvas, ctx } = makeCanvas(iconSize)
 
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
@@ -2486,10 +2430,7 @@ export default function App() {
     const { bgColor = '#000000', textColor = '#00aaff', sink = '@DEFAULT_SINK@' } = config?.action ?? {}
 
     // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
-    const canvas = document.createElement('canvas')
-    canvas.width  = iconSize
-    canvas.height = iconSize
-    const ctx = canvas.getContext('2d')
+    const { canvas, ctx } = makeCanvas(iconSize)
 
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
@@ -2537,10 +2478,7 @@ export default function App() {
     const { bgColor = '#000000', sink = '@DEFAULT_SINK@' } = config?.action ?? {}
 
     // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
-    const canvas = document.createElement('canvas')
-    canvas.width  = iconSize
-    canvas.height = iconSize
-    const ctx = canvas.getContext('2d')
+    const { canvas, ctx } = makeCanvas(iconSize)
 
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
@@ -2582,10 +2520,7 @@ export default function App() {
     const { bgColor = '#000000', textColor = '#ffffff', player = '%any' } = config?.action ?? {}
 
     // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
-    const canvas = document.createElement('canvas')
-    canvas.width  = iconSize
-    canvas.height = iconSize
-    const ctx = canvas.getContext('2d')
+    const { canvas, ctx } = makeCanvas(iconSize)
 
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
@@ -2655,10 +2590,7 @@ export default function App() {
     const { bgColor = '#000000' } = config?.action ?? {}
 
     // One canvas/ctx per button instance — reused every tick to avoid GPU context churn
-    const canvas = document.createElement('canvas')
-    canvas.width  = iconSize
-    canvas.height = iconSize
-    const ctx = canvas.getContext('2d')
+    const { canvas, ctx } = makeCanvas(iconSize)
 
     const draw = async () => {
       if (dynamicButtonsRef.current[index]?.token !== token) return
@@ -2753,12 +2685,9 @@ export default function App() {
     setCurrentPage(0)
     setFolderPath([])
     setSelectedKey(null)
-    const rows  = deviceRef.current?.rows ?? 3
-    const cols  = deviceRef.current?.cols ?? 5
-    const total = rows * cols
-    for (let i = 0; i < total; i++) {
-      drawHardwareButtonRef.current(i, page0[i])
-    }
+    const rows = deviceRef.current?.rows ?? 3
+    const cols = deviceRef.current?.cols ?? 5
+    redrawButtons(page0, rows, cols, drawHardwareButtonRef.current)
     return true
   }
   const loadProfileDataRef = useRef(null)
@@ -2773,10 +2702,9 @@ export default function App() {
     setSelectedKey(null)
     setToggledButtons({})
     toggledButtonsRef.current = {}
-    const newPage = pg[pageIndex] ?? {}
-    const rows  = deviceRef.current?.rows ?? 3
-    const cols  = deviceRef.current?.cols ?? 5
-    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newPage[i])
+    const rows = deviceRef.current?.rows ?? 3
+    const cols = deviceRef.current?.cols ?? 5
+    redrawButtons(pg[pageIndex] ?? {}, rows, cols, drawHardwareButtonRef.current)
   }
   const switchToPageRef = useRef(null)
   switchToPageRef.current = switchToPage
@@ -2789,9 +2717,9 @@ export default function App() {
     setSelectedKey(null)
     setToggledButtons({})
     toggledButtonsRef.current = {}
-    const rows  = deviceRef.current?.rows ?? 3
-    const cols  = deviceRef.current?.cols ?? 5
-    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, undefined)
+    const rows = deviceRef.current?.rows ?? 3
+    const cols = deviceRef.current?.cols ?? 5
+    redrawButtons({}, rows, cols, drawHardwareButtonRef.current)
   }
 
   const removePage = (pageIndex) => {
@@ -2806,23 +2734,23 @@ export default function App() {
     setSelectedKey(null)
     setToggledButtons({})
     toggledButtonsRef.current = {}
-    const rows  = deviceRef.current?.rows ?? 3
-    const cols  = deviceRef.current?.cols ?? 5
-    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newPage[i])
+    const rows = deviceRef.current?.rows ?? 3
+    const cols = deviceRef.current?.cols ?? 5
+    redrawButtons(newPage, rows, cols, drawHardwareButtonRef.current)
   }
   // ─────────────────────────────────────────────────────────────
 
   // ── Folder enter / exit ─────────────────────────────────────
   const enterFolder = (buttonIndex) => {
-    const newPath     = [...folderPathRef.current, buttonIndex]
-    const newButtons  = getButtonsAt(pagesRef.current, currentPageRef.current, newPath)
+    const newPath    = [...folderPathRef.current, buttonIndex]
+    const newButtons = getButtonsAt(pagesRef.current, currentPageRef.current, newPath)
     setFolderPath(newPath)
     setSelectedKey(null)
     setToggledButtons({})
     toggledButtonsRef.current = {}
-    const rows  = deviceRef.current?.rows ?? 3
-    const cols  = deviceRef.current?.cols ?? 5
-    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newButtons[i])
+    const rows = deviceRef.current?.rows ?? 3
+    const cols = deviceRef.current?.cols ?? 5
+    redrawButtons(newButtons, rows, cols, drawHardwareButtonRef.current)
   }
   const enterFolderRef = useRef(null)
   enterFolderRef.current = enterFolder
@@ -2834,9 +2762,9 @@ export default function App() {
     setSelectedKey(null)
     setToggledButtons({})
     toggledButtonsRef.current = {}
-    const rows  = deviceRef.current?.rows ?? 3
-    const cols  = deviceRef.current?.cols ?? 5
-    for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, newButtons[i])
+    const rows = deviceRef.current?.rows ?? 3
+    const cols = deviceRef.current?.cols ?? 5
+    redrawButtons(newButtons, rows, cols, drawHardwareButtonRef.current)
   }
   const exitFolderRef = useRef(null)
   exitFolderRef.current = exitFolder
@@ -3174,12 +3102,8 @@ export default function App() {
   // On reconnect: hardware is dark — redraw all buttons from current config
   useEffect(() => {
     if (!device) return
-    const entries = Object.entries(buttonConfigsRef.current)
-    if (!entries.length) return  // first startup: profile-load effect handles drawing
-    const total = (device.rows ?? 3) * (device.cols ?? 5)
-    for (let i = 0; i < total; i++) {
-      drawHardwareButtonRef.current(i, buttonConfigsRef.current[i])
-    }
+    if (!Object.keys(buttonConfigsRef.current).length) return  // first startup: profile-load effect handles drawing
+    redrawButtons(buttonConfigsRef.current, device.rows ?? 3, device.cols ?? 5, drawHardwareButtonRef.current)
   }, [device]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows        = device?.rows ?? 3
@@ -3207,9 +3131,9 @@ export default function App() {
                 setActiveProfile(result.name)
                 setPages([{}])
                 setCurrentPage(0)
-                const rows  = deviceRef.current?.rows ?? 3
-                const cols  = deviceRef.current?.cols ?? 5
-                for (let i = 0; i < rows * cols; i++) drawHardwareButtonRef.current(i, undefined)
+                const rows = deviceRef.current?.rows ?? 3
+                const cols = deviceRef.current?.cols ?? 5
+                redrawButtons({}, rows, cols, drawHardwareButtonRef.current)
               }
             }}
             onDelete={async name => {
