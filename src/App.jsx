@@ -629,50 +629,116 @@ function HotkeyEditor({ value, onChange }) {
 
 // ─── Open App Editor ────────────────────────────────────────
 function OpenAppEditor({ target, mode, onChange }) {
+  const isAdvanced = mode === 'direct' || mode === 'xdg-open' || (!!target && (target.startsWith('/') || target.startsWith('~') || target.includes(' ')))
+  const [advanced, setAdvanced] = useState(isAdvanced)
+  const [apps, setApps]         = useState([])
+  const [query, setQuery]       = useState('')
+  const [open, setOpen]         = useState(false)
+  const containerRef            = useRef(null)
+
+  useEffect(() => {
+    window.streamDeck?.listApps?.().then(list => { if (list?.length) setApps(list) })
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const handle = (e) => { if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [open])
+
   const browseFile = async () => {
     const file = await window.streamDeck?.browseForFile()
-    if (file) onChange({ target: file })
+    if (file) { onChange({ target: file, mode: 'direct' }); setAdvanced(true) }
   }
 
+  const FolderIcon = () => (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
+    </svg>
+  )
+
+  if (advanced) {
+    return (
+      <div className="open-app-editor">
+        <div className="open-app-input-row">
+          <input
+            className="prop-input"
+            type="text"
+            placeholder={
+              mode === 'gtk-launch' ? 'e.g. com.obsproject.Studio  or  obs' :
+              mode === 'xdg-open'   ? 'e.g. a file path or URL' :
+                                      'e.g. /usr/bin/obs  or  flatpak run com.X'
+            }
+            value={target ?? ''}
+            onChange={e => onChange({ target: e.target.value })}
+          />
+          <button className="browse-btn" onClick={browseFile} title="Browse for file"><FolderIcon /></button>
+        </div>
+        <div className="open-app-modes">
+          {[
+            { value: 'gtk-launch', label: 'App ID',   hint: 'Recommended — works for Flatpak & native' },
+            { value: 'xdg-open',   label: 'xdg-open', hint: 'Open files / URLs with default handler' },
+            { value: 'direct',     label: 'Command',  hint: 'Run a binary or shell command directly' },
+          ].map(opt => (
+            <label key={opt.value} className={`open-app-mode-option${mode === opt.value ? ' active' : ''}`}>
+              <input type="radio" name="open-app-mode" value={opt.value} checked={mode === opt.value} onChange={() => onChange({ mode: opt.value })} />
+              <span className="open-app-mode-label">{opt.label}</span>
+              {mode === opt.value && <span className="open-app-mode-hint">{opt.hint}</span>}
+            </label>
+          ))}
+        </div>
+        <button className="app-picker-switch-btn" onClick={() => setAdvanced(false)}>← Back to app picker</button>
+      </div>
+    )
+  }
+
+  // ── Picker mode ──
+  const selectedApp  = mode === 'gtk-launch' && target ? apps.find(a => a.appId === target) : null
+  const displayName  = selectedApp?.name ?? (mode === 'gtk-launch' && target ? target : null)
+  const filtered     = query.length > 0
+    ? apps.filter(a => a.name.toLowerCase().includes(query.toLowerCase())).slice(0, 10)
+    : []
+
   return (
-    <div className="open-app-editor">
-      <div className="open-app-input-row">
-        <input
-          className="prop-input"
-          type="text"
-          placeholder={
-            mode === 'gtk-launch' ? 'e.g. com.obsproject.Studio  or  firefox' :
-            mode === 'xdg-open'   ? 'e.g. https://example.com  or  a file path' :
-                                    'e.g. /usr/bin/code  or  flatpak run com.X'
-          }
-          value={target ?? ''}
-          onChange={e => onChange({ target: e.target.value })}
-        />
-        <button className="browse-btn" onClick={browseFile} title="Browse for application">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="14" height="14">
-            <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
-          </svg>
-        </button>
-      </div>
-      <div className="open-app-modes">
-        {[
-          { value: 'gtk-launch', label: 'App ID',     hint: 'Recommended — works for Flatpak & native' },
-          { value: 'xdg-open',   label: 'xdg-open',   hint: 'Open files / URLs with default handler' },
-          { value: 'direct',     label: 'Command',     hint: 'Run a binary or shell command directly' },
-        ].map(opt => (
-          <label key={opt.value} className={`open-app-mode-option${mode === opt.value ? ' active' : ''}`}>
-            <input
-              type="radio"
-              name="open-app-mode"
-              value={opt.value}
-              checked={mode === opt.value}
-              onChange={() => onChange({ mode: opt.value })}
-            />
-            <span className="open-app-mode-label">{opt.label}</span>
-            {mode === opt.value && <span className="open-app-mode-hint">{opt.hint}</span>}
-          </label>
-        ))}
-      </div>
+    <div className="open-app-editor" ref={containerRef}>
+      {displayName && !open ? (
+        <div className="app-picker-selected">
+          <span className="app-picker-selected-name">{displayName}</span>
+          <button className="app-picker-clear-btn" title="Change app" onClick={() => { onChange({ target: '', mode: 'gtk-launch' }); setQuery(''); setOpen(true) }}>✕</button>
+        </div>
+      ) : (
+        <div className="open-app-input-row">
+          <input
+            className="prop-input"
+            type="text"
+            placeholder="Search installed apps…"
+            value={query}
+            autoFocus={open}
+            onChange={e => { setQuery(e.target.value); setOpen(true) }}
+            onFocus={() => setOpen(true)}
+          />
+          <button className="browse-btn" onClick={browseFile} title="Browse for file (AppImage, script…)"><FolderIcon /></button>
+        </div>
+      )}
+
+      {open && (
+        <div className="app-picker-dropdown">
+          {filtered.length > 0 && filtered.map(app => (
+            <button key={app.appId} className="app-picker-item" onClick={() => { onChange({ target: app.appId, mode: 'gtk-launch' }); setQuery(''); setOpen(false) }}>
+              {app.name}
+            </button>
+          ))}
+          {filtered.length === 0 && query.length > 0 && (
+            <div className="app-picker-no-results">No apps matching "{query}"</div>
+          )}
+          {filtered.length === 0 && query.length === 0 && (
+            <div className="app-picker-no-results">Start typing to search…</div>
+          )}
+        </div>
+      )}
+
+      <button className="app-picker-switch-btn" onClick={() => setAdvanced(true)}>Enter path or command manually →</button>
     </div>
   )
 }

@@ -1446,6 +1446,86 @@
   font-style: italic;
 }
 
+/* ─── App Picker ─────────────────────────────────────────── */
+.app-picker-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #1a2030;
+  border: 1px solid #2a3a55;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #5aabff;
+}
+
+.app-picker-selected-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-picker-clear-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #445;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 0 0 8px;
+  line-height: 1;
+  transition: color 0.1s;
+}
+
+.app-picker-clear-btn:hover { color: #ff6060; }
+
+.app-picker-dropdown {
+  display: flex;
+  flex-direction: column;
+  background: #161616;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.app-picker-item {
+  background: none;
+  border: none;
+  border-bottom: 1px solid #1e1e1e;
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: #aaa;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.app-picker-item:last-child { border-bottom: none; }
+.app-picker-item:hover { background: #1e2a3a; color: #fff; }
+
+.app-picker-no-results {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #444;
+  font-style: italic;
+}
+
+.app-picker-switch-btn {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 2px 0;
+  font-size: 10px;
+  color: #3a3a3a;
+  cursor: pointer;
+  transition: color 0.1s;
+}
+
+.app-picker-switch-btn:hover { color: #666; }
+
 .action-hint {
   font-size: 11px;
   color: #3d3d3d;

@@ -3,6 +3,7 @@
 const { app, BrowserWindow, ipcMain, dialog, protocol, net, Tray, Menu, nativeImage } = require('electron')
 const path   = require('path')
 const fs     = require('fs')
+const os     = require('os')
 const { spawn, fork } = require('child_process')
 const {
   PLAYERCTL_COMMANDS,
@@ -440,6 +441,48 @@ function registerIpcHandlers() {
   ipcMain.handle('dialog:open-file', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { title: 'Select Application', properties: ['openFile'] })
     return result.canceled ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle('apps:list', async () => {
+    const dirs = [
+      '/usr/share/applications',
+      '/var/lib/flatpak/exports/share/applications',
+      path.join(os.homedir(), '.local/share/applications'),
+      path.join(os.homedir(), '.local/share/flatpak/exports/share/applications'),
+    ]
+    const apps = []
+    const seen = new Set()
+    for (const dir of dirs) {
+      let files
+      try { files = await fs.promises.readdir(dir) } catch { continue }
+      for (const file of files) {
+        if (!file.endsWith('.desktop')) continue
+        const appId = file.replace(/\.desktop$/, '')
+        if (seen.has(appId)) continue
+        seen.add(appId)
+        try {
+          const content = await fs.promises.readFile(path.join(dir, file), 'utf8')
+          const data = {}
+          let inEntry = false
+          for (const line of content.split('\n')) {
+            const t = line.trim()
+            if (t === '[Desktop Entry]') { inEntry = true; continue }
+            if (t.startsWith('[') && t !== '[Desktop Entry]') { inEntry = false; continue }
+            if (!inEntry) continue
+            const eq = t.indexOf('=')
+            if (eq === -1) continue
+            const key = t.slice(0, eq).trim()
+            if (key.includes('[')) continue // skip localized keys
+            if (!data[key]) data[key] = t.slice(eq + 1).trim()
+          }
+          if (data.Type !== 'Application') continue
+          if (data.NoDisplay === 'true' || data.Hidden === 'true') continue
+          if (!data.Name) continue
+          apps.push({ name: data.Name, appId })
+        } catch { continue }
+      }
+    }
+    return apps.sort((a, b) => a.name.localeCompare(b.name))
   })
 
   ipcMain.handle('profile:save', async (_, data) => {
