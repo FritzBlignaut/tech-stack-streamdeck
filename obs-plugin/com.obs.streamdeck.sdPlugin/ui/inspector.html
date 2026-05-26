@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OBS Studio</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      padding: 12px;
+      min-height: 100vh;
+    }
+
+    h2 {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .action-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+
+    .action-desc {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 12px;
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 14px;
+      padding: 6px 8px;
+      background: #252525;
+      border-radius: 4px;
+    }
+
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+    }
+    .status-dot.connected  { background: #22aa22; }
+    .status-dot.error      { background: #cc4444; }
+
+    .field { margin-bottom: 12px; }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #aaa;
+      margin-bottom: 5px;
+    }
+
+    input[type="text"],
+    select {
+      width: 100%;
+      background: #252525;
+      border: 1px solid #333;
+      border-radius: 3px;
+      color: #e0e0e0;
+      font-size: 13px;
+      padding: 7px 9px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus,
+    select:focus { border-color: #cf3e1c; }
+
+    select option { background: #252525; }
+
+    .hint {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #666;
+      line-height: 1.4;
+    }
+
+    .save-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      background: #cf3e1c;
+      color: #ffffff;
+      border: none;
+      border-radius: 3px;
+      padding: 7px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover  { background: #b83519; }
+    button:active { background: #a02e15; }
+
+    .status {
+      font-size: 12px;
+      color: #22aa22;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .status.visible       { opacity: 1; }
+    .status.error         { color: #cc4444; }
+
+    .no-config {
+      background: #252525;
+      border-left: 3px solid #cf3e1c;
+      border-radius: 0 4px 4px 0;
+      padding: 10px 12px;
+      color: #aaa;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid #2e2e2e;
+      margin: 14px 0;
+    }
+
+    .obs-hint {
+      font-size: 11px;
+      color: #666;
+      margin-top: 14px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="action-name" id="actionName">OBS Studio</div>
+  <div class="action-desc" id="actionDesc"></div>
+
+  <div class="connection-status" id="connectionStatus">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Connecting to OBS…</span>
+  </div>
+
+  <div id="formArea"></div>
+
+  <div class="save-row" id="saveRow" style="display:none">
+    <button id="saveBtn">Save</button>
+    <span class="status" id="statusMsg"></span>
+  </div>
+
+  <p class="obs-hint">OBS WebSocket must be enabled in OBS → Tools → WebSocket Server Settings (port 4455, no password by default).</p>
+
+  <script src="sdpi://host/bridge.js"></script>
+  <script>
+    'use strict'
+
+    // ─── Action metadata ────────────────────────────────────────────────────────
+    const ACTION_INFO = {
+      'com.obs.streamdeck.record': {
+        label: 'Record',
+        desc:  'Toggles OBS recording on / off when pressed.',
+        form:  null,
+      },
+      'com.obs.streamdeck.record-pause': {
+        label: 'Pause Recording',
+        desc:  'Pauses or resumes an active OBS recording.',
+        form:  null,
+      },
+      'com.obs.streamdeck.stream': {
+        label: 'Stream',
+        desc:  'Starts or stops the OBS stream when pressed.',
+        form:  null,
+      },
+      'com.obs.streamdeck.replay-buffer': {
+        label: 'Replay Buffer',
+        desc:  'Starts or stops the OBS replay buffer.',
+        form:  null,
+      },
+      'com.obs.streamdeck.save-replay': {
+        label: 'Save Replay',
+        desc:  'Saves the current replay buffer to disk.',
+        form:  null,
+      },
+      'com.obs.streamdeck.studio-mode': {
+        label: 'Studio Mode',
+        desc:  'Toggles OBS Studio Mode on / off.',
+        form:  null,
+      },
+      'com.obs.streamdeck.push-to-program': {
+        label: 'Push to Program',
+        desc:  'Pushes the current preview scene to program (Studio Mode only).',
+        form:  null,
+      },
+      'com.obs.streamdeck.scene': {
+        label: 'Scene',
+        desc:  'Switches OBS to this scene when pressed.',
+        form:  'scene',
+      },
+      'com.obs.streamdeck.scene-collection': {
+        label: 'Scene Collection',
+        desc:  'Switches to this scene collection when pressed.',
+        form:  'sceneCollection',
+      },
+      'com.obs.streamdeck.source-visibility': {
+        label: 'Source Visibility',
+        desc:  'Toggles visibility of a source in a scene.',
+        form:  'sourceVisibility',
+      },
+      'com.obs.streamdeck.mute': {
+        label: 'Mute',
+        desc:  'Toggles mute on an audio source when pressed.',
+        form:  'mute',
+      },
+      'com.obs.streamdeck.media': {
+        label: 'Media Control',
+        desc:  'Sends a media action to a media source.',
+        form:  'media',
+      },
+      'com.obs.streamdeck.filter': {
+        label: 'Source Filter',
+        desc:  'Toggles a source filter on / off when pressed.',
+        form:  'filter',
+      },
+      'com.obs.streamdeck.screenshot': {
+        label: 'Screenshot',
+        desc:  'Takes a screenshot of a source and saves it to a file.',
+        form:  'screenshot',
+      },
+      'com.obs.streamdeck.transition': {
+        label: 'Transition',
+        desc:  'Sets the active scene transition when pressed.',
+        form:  'transition',
+      },
+      'com.obs.streamdeck.chapter-marker': {
+        label: 'Chapter Marker',
+        desc:  'Inserts a caption/chapter marker into the active recording.',
+        form:  'chapterMarker',
+      },
+    }
+
+    // ─── State ──────────────────────────────────────────────────────────────────
+    let currentSettings   = {}
+    let currentActionUUID = ''
+    let obsConnected      = false
+
+    const scenes           = []
+    const inputs           = []
+    const transitions      = []
+    const sceneCollections = []
+
+    // ─── DOM refs ───────────────────────────────────────────────────────────────
+    const actionNameEl   = document.getElementById('actionName')
+    const actionDescEl   = document.getElementById('actionDesc')
+    const statusDotEl    = document.getElementById('statusDot')
+    const statusTextEl   = document.getElementById('statusText')
+    const formAreaEl     = document.getElementById('formArea')
+    const saveRowEl      = document.getElementById('saveRow')
+    const saveBtnEl      = document.getElementById('saveBtn')
+    const statusMsgEl    = document.getElementById('statusMsg')
+    let statusTimer      = null
+
+    // ─── Status message ─────────────────────────────────────────────────────────
+    function showStatus(msg, isError = false) {
+      clearTimeout(statusTimer)
+      statusMsgEl.textContent = msg
+      statusMsgEl.className = 'status visible' + (isError ? ' error' : '')
+      statusTimer = setTimeout(() => { statusMsgEl.className = 'status' }, 2500)
+    }
+
+    // ─── Form builders ──────────────────────────────────────────────────────────
+    function makeSelect(id, label, options, currentValue, placeholder) {
+      const div = document.createElement('div')
+      div.className = 'field'
+      div.innerHTML = `<label for="${id}">${label}</label>`
+      const sel = document.createElement('select')
+      sel.id = id
+      if (placeholder) {
+        const ph = document.createElement('option')
+        ph.value = ''
+        ph.textContent = placeholder
+        sel.appendChild(ph)
+      }
+      for (const opt of options) {
+        const el = document.createElement('option')
+        el.value = opt
+        el.textContent = opt
+        if (opt === currentValue) el.selected = true
+        sel.appendChild(el)
+      }
+      // If no options loaded yet, show a fallback text input
+      if (options.length === 0) {
+        const input = document.createElement('input')
+        input.type = 'text'
+        input.id = id
+        input.value = currentValue || ''
+        input.placeholder = 'Type name (OBS not connected)'
+        div.appendChild(input)
+      } else {
+        if (currentValue && !options.includes(currentValue)) {
+          const customOpt = document.createElement('option')
+          customOpt.value = currentValue
+          customOpt.textContent = currentValue
+          customOpt.selected = true
+          sel.appendChild(customOpt)
+        }
+        div.appendChild(sel)
+      }
+      return div
+    }
+
+    function makeTextInput(id, label, value, placeholder) {
+      const div = document.createElement('div')
+      div.className = 'field'
+      div.innerHTML = `<label for="${id}">${label}</label>`
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.id = id
+      input.value = value || ''
+      input.placeholder = placeholder || ''
+      div.appendChild(input)
+      return div
+    }
+
+    function buildForm(formType) {
+      formAreaEl.innerHTML = ''
+      saveRowEl.style.display = 'none'
+
+      if (!formType) {
+        formAreaEl.innerHTML = '<div class="no-config">No configuration needed — just assign this button and press it.</div>'
+        return
+      }
+
+      saveRowEl.style.display = 'flex'
+
+      if (formType === 'scene') {
+        formAreaEl.appendChild(makeSelect('sceneName', 'Scene', scenes, currentSettings.sceneName, '— select scene —'))
+      }
+
+      else if (formType === 'sceneCollection') {
+        formAreaEl.appendChild(makeSelect('sceneCollectionName', 'Scene Collection', sceneCollections, currentSettings.sceneCollectionName, '— select collection —'))
+      }
+
+      else if (formType === 'mute' || formType === 'media') {
+        formAreaEl.appendChild(makeSelect('inputName', 'Audio / Media Source', inputs, currentSettings.inputName, '— select source —'))
+        if (formType === 'media') {
+          const mediaDiv = document.createElement('div')
+          mediaDiv.className = 'field'
+          mediaDiv.innerHTML = '<label for="mediaAction">Action</label>'
+          const sel = document.createElement('select')
+          sel.id = 'mediaAction'
+          const mediaActions = [
+            { value: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY',     label: 'Play' },
+            { value: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE',    label: 'Pause' },
+            { value: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP',     label: 'Stop' },
+            { value: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART',  label: 'Restart' },
+            { value: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_NEXT',     label: 'Next' },
+            { value: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PREVIOUS', label: 'Previous' },
+          ]
+          for (const { value, label } of mediaActions) {
+            const opt = document.createElement('option')
+            opt.value = value
+            opt.textContent = label
+            if (value === (currentSettings.mediaAction ?? 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE')) opt.selected = true
+            sel.appendChild(opt)
+          }
+          mediaDiv.appendChild(sel)
+          formAreaEl.appendChild(mediaDiv)
+        }
+      }
+
+      else if (formType === 'sourceVisibility') {
+        formAreaEl.appendChild(makeSelect('sceneName', 'Scene', scenes, currentSettings.sceneName, '— select scene —'))
+        formAreaEl.appendChild(makeTextInput('sourceName', 'Source Name', currentSettings.sourceName, 'Exact source name in OBS'))
+      }
+
+      else if (formType === 'filter') {
+        formAreaEl.appendChild(makeSelect('sourceName', 'Source', inputs.length ? inputs : [], currentSettings.sourceName, '— select source —'))
+        formAreaEl.appendChild(makeTextInput('filterName', 'Filter Name', currentSettings.filterName, 'Exact filter name in OBS'))
+      }
+
+      else if (formType === 'screenshot') {
+        formAreaEl.appendChild(makeSelect('sourceName', 'Source', inputs.length ? inputs : [], currentSettings.sourceName, '— select source —'))
+        formAreaEl.appendChild(makeTextInput('imageFilePath', 'Save to Path', currentSettings.imageFilePath, '/home/user/screenshot.png'))
+      }
+
+      else if (formType === 'transition') {
+        formAreaEl.appendChild(makeSelect('transitionName', 'Transition', transitions, currentSettings.transitionName, '— select transition —'))
+      }
+
+      else if (formType === 'chapterMarker') {
+        formAreaEl.appendChild(makeTextInput('captionText', 'Caption Text', currentSettings.captionText, 'e.g. Chapter 1'))
+      }
+    }
+
+    // ─── Collect form values into settings ──────────────────────────────────────
+    function collectSettings() {
+      const updated = { ...currentSettings }
+      const fields = formAreaEl.querySelectorAll('input[type="text"], select')
+      for (const el of fields) {
+        if (el.id) updated[el.id] = el.value
+      }
+      return updated
+    }
+
+    // ─── Save ────────────────────────────────────────────────────────────────────
+    function save() {
+      const updated = collectSettings()
+      sdpi.setSettings(updated)
+      showStatus('Saved')
+    }
+
+    saveBtnEl.addEventListener('click', save)
+
+    // ─── Render page ─────────────────────────────────────────────────────────────
+    function render() {
+      const info = ACTION_INFO[currentActionUUID]
+      actionNameEl.textContent = info?.label ?? 'OBS Studio'
+      actionDescEl.textContent = info?.desc  ?? ''
+      buildForm(info?.form ?? null)
+    }
+
+    // ─── OBS data from plugin ────────────────────────────────────────────────────
+    function onPluginMessage(payload) {
+      if (payload.type === 'scenes') {
+        scenes.length = 0; scenes.push(...payload.scenes); buildForm(ACTION_INFO[currentActionUUID]?.form)
+      } else if (payload.type === 'inputs') {
+        inputs.length = 0; inputs.push(...payload.inputs); buildForm(ACTION_INFO[currentActionUUID]?.form)
+      } else if (payload.type === 'transitions') {
+        transitions.length = 0; transitions.push(...payload.transitions); buildForm(ACTION_INFO[currentActionUUID]?.form)
+      } else if (payload.type === 'sceneCollections') {
+        sceneCollections.length = 0; sceneCollections.push(...payload.sceneCollections); buildForm(ACTION_INFO[currentActionUUID]?.form)
+      } else if (payload.type === 'error') {
+        statusDotEl.className = 'status-dot error'
+        statusTextEl.textContent = 'OBS not connected'
+      }
+    }
+
+    // ─── Request OBS data based on which form needs it ──────────────────────────
+    function requestOBSData(formType) {
+      if (!formType) return
+      const needsScenes = ['scene', 'sourceVisibility'].includes(formType)
+      const needsInputs = ['mute', 'media', 'filter', 'screenshot'].includes(formType)
+      const needsTransitions  = formType === 'transition'
+      const needsCollections  = formType === 'sceneCollection'
+      if (needsScenes)      sdpi.sendToPlugin({ type: 'getScenes' })
+      if (needsInputs)      sdpi.sendToPlugin({ type: 'getInputs' })
+      if (needsTransitions) sdpi.sendToPlugin({ type: 'getTransitions' })
+      if (needsCollections) sdpi.sendToPlugin({ type: 'getSceneCollections' })
+    }
+
+    // ─── sdpi bridge ─────────────────────────────────────────────────────────────
+    sdpi.getSettings(settings => {
+      currentSettings   = settings || {}
+      currentActionUUID = settings?.type || ''
+
+      // Update connection status from settings (set by plugin via sendToPropertyInspector)
+      if (settings?._obsConnected === true) {
+        statusDotEl.className = 'status-dot connected'
+        statusTextEl.textContent = 'OBS connected'
+        obsConnected = true
+      }
+
+      render()
+      requestOBSData(ACTION_INFO[currentActionUUID]?.form)
+    })
+
+    // Receive data back from the plugin process
+    sdpi.onSendToPropertyInspector(payload => {
+      if (payload?.type === 'error') {
+        statusDotEl.className = 'status-dot error'
+        statusTextEl.textContent = 'OBS not connected'
+      } else {
+        statusDotEl.className = 'status-dot connected'
+        statusTextEl.textContent = 'OBS connected'
+      }
+      onPluginMessage(payload)
+    })
+  </script>
+</body>
+</html>

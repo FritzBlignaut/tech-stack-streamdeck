@@ -2,24 +2,13 @@
 /**
  * Component tests for ButtonGrid and ActionSection.
  *
- * obs-websocket-js and gifuct-js are mocked at the top so that importing
- * App.jsx doesn't require a real WebSocket connection or GIF decoder.
+ * gifuct-js is mocked at the top so that importing App.jsx doesn't require a GIF decoder.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // ── Module mocks (must come before the imports that trigger them) ──────────────
-
-vi.mock('obs-websocket-js', () => ({
-  default: class OBSWebSocket {
-    connect()    { return Promise.resolve() }
-    disconnect() {}
-    call()       { return Promise.resolve({}) }
-    on()         {}
-    off()        {}
-  },
-}))
 
 vi.mock('gifuct-js', () => ({
   parseGIF:        () => ({ lsd: { width: 72, height: 72 } }),
@@ -161,68 +150,6 @@ describe('ButtonGrid', () => {
     const btn = screen.getByLabelText('Button 1')
     // jsdom may wrap the URL in quotes inside url(...)
     expect(btn.style.backgroundImage).toMatch(previewUrl)
-  })
-})
-
-// ─── ActionSection — OBS ─────────────────────────────────────────────────────
-
-describe('ActionSection — OBS action', () => {
-  const noop = () => {}
-
-  it('renders the OBS record chip with label "Record"', () => {
-    render(<ActionSection action={{ type: 'obs-record' }} onChange={noop} />)
-    expect(screen.getByText('Record')).toBeInTheDocument()
-  })
-
-  it('renders an action hint for obs-record', () => {
-    render(<ActionSection action={{ type: 'obs-record' }} onChange={noop} />)
-    expect(screen.getByText(/toggles OBS recording/i)).toBeInTheDocument()
-  })
-
-  it('does not show a scene picker for obs-record', () => {
-    render(<ActionSection action={{ type: 'obs-record' }} onChange={noop} />)
-    expect(screen.queryByPlaceholderText(/connect OBS to pick/i)).not.toBeInTheDocument()
-  })
-
-  it('shows a text input for scene name when action=obs-scene and obsScenes=[]', () => {
-    const action = { type: 'obs-scene', sceneName: '' }
-    render(<ActionSection action={action} onChange={noop} obsScenes={[]} />)
-    expect(screen.getByPlaceholderText(/connect OBS to pick/i)).toBeInTheDocument()
-  })
-
-  it('shows a <select> dropdown when action=obs-scene and obsScenes has entries', () => {
-    const action = { type: 'obs-scene', sceneName: 'Gaming' }
-    const scenes = ['Gaming', 'Just Chatting', 'BRB']
-    render(<ActionSection action={action} onChange={noop} obsScenes={scenes} />)
-
-    const scenePicker = screen.getByRole('combobox')
-    expect(scenePicker).toBeInTheDocument()
-    expect(screen.getByText('Gaming')).toBeInTheDocument()
-    expect(screen.getByText('Just Chatting')).toBeInTheDocument()
-    expect(screen.getByText('BRB')).toBeInTheDocument()
-  })
-
-  it('calls onChange with updated sceneName when user picks a scene', () => {
-    const onChange = vi.fn()
-    const action = { type: 'obs-scene', sceneName: 'Gaming' }
-    const scenes = ['Gaming', 'Just Chatting', 'BRB']
-    render(<ActionSection action={action} onChange={onChange} obsScenes={scenes} />)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'BRB' } })
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ action: expect.objectContaining({ sceneName: 'BRB' }) })
-    )
-  })
-
-  it('renders the remove button for obs-record', () => {
-    render(<ActionSection action={{ type: 'obs-record' }} onChange={noop} />)
-    expect(screen.getByTitle('Remove action')).toBeInTheDocument()
-  })
-
-  it('calls onChange with action:null when remove button is clicked', () => {
-    const onChange = vi.fn()
-    render(<ActionSection action={{ type: 'obs-record' }} onChange={onChange} />)
-    fireEvent.click(screen.getByTitle('Remove action'))
-    expect(onChange).toHaveBeenCalledWith({ action: null })
   })
 })
 

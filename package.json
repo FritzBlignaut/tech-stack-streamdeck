@@ -43,7 +43,6 @@
     "@elgato-stream-deck/node": "^7.6.2",
     "electron-store": "^11.0.2",
     "gifuct-js": "^2.1.2",
-    "obs-websocket-js": "^5.0.8",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "sharp": "^0.34.5"
