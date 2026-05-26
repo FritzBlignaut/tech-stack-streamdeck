@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('streamDeck', {
   runCommand:       (command)       => ipcRenderer.invoke('action:run-cmd',        { command }),
   sleepToggle:      ()              => ipcRenderer.invoke('action:sleep-toggle'),
   browseForFile:    ()              => ipcRenderer.invoke('dialog:open-file'),
+  listApps:         ()              => ipcRenderer.invoke('apps:list'),
   browseIconDir:    ()              => ipcRenderer.invoke('icons:browse-dir'),
   scanIconDir:      (dirPath)       => ipcRenderer.invoke('icons:scan-dir',  { dirPath }),
   loadIconFile:     (filePath)      => ipcRenderer.invoke('icons:load-file', { filePath }),
