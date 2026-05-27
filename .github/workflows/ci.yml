@@ -46,16 +46,19 @@ jobs:
           cache: 'npm'
 
       # ── Version bump (push events only, not PRs, not main/uat) ────────────────
-      # Format: MAJOR.ALPHA.BETA.BUILD
-      #   develop → increment BUILD (4th digit)
-      #   alpha   → increment ALPHA (2nd digit), reset BUILD to 0
-      #   beta    → increment BETA  (3rd digit), reset BUILD to 0
+      # Display version format: MAJOR.ALPHA.BETA.BUILD  (stored in build.extraMetadata.version)
+      # Semver format:          MAJOR.ALPHA.BETA         (stored in version — required by electron-builder)
+      #
+      #   develop → increment BUILD (4th digit of extraMetadata.version only)
+      #   alpha   → increment ALPHA (2nd digit), reset BUILD to 0, sync 3-part version
+      #   beta    → increment BETA  (3rd digit), reset BUILD to 0, sync 3-part version
       - name: Bump version
         id: bump
         if: github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'uat'
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          IFS='.' read -r MAJOR ALPHA BETA BUILD <<< "$VERSION"
+          # Read the 4-part display version from extraMetadata
+          EXT_VERSION=$(node -p "require('./package.json').build.extraMetadata.version")
+          IFS='.' read -r MAJOR ALPHA BETA BUILD <<< "$EXT_VERSION"
 
           case "${{ github.ref_name }}" in
             develop)
@@ -71,15 +74,19 @@ jobs:
               ;;
           esac
 
-          NEW_VERSION="${MAJOR}.${ALPHA}.${BETA}.${BUILD}"
+          NEW_EXT_VERSION="${MAJOR}.${ALPHA}.${BETA}.${BUILD}"
+          # 3-part semver for electron-builder (strips the BUILD digit)
+          NEW_VERSION="${MAJOR}.${ALPHA}.${BETA}"
+
           node -e "
             const fs  = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
             pkg.version = '${NEW_VERSION}';
+            pkg.build.extraMetadata.version = '${NEW_EXT_VERSION}';
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          echo "new-version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Bumped to: ${NEW_VERSION}"
+          echo "new-version=${NEW_EXT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Bumped to: ${NEW_EXT_VERSION} (semver: ${NEW_VERSION})"
 
       - name: Install dependencies
         run: npm ci
