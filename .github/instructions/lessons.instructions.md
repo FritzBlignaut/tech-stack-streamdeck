@@ -84,7 +84,8 @@ This ensures work is isolated, traceable to the issue, and can be reviewed via a
 
 **Agents must be used where applicable:**
 - **Branch Manager** — invoke before starting ANY implementation work to create the correct branch.
-- **GitHub Manager** — use for all GitHub operations (issues, PRs, labels). Never use GitKraken or third-party tools.
+- **GitHub Manager** — use for all GitHub operations (issues, PRs, labels, CI monitoring, GitHub Releases). Never use GitKraken or third-party tools.
+- **Release Manager** — use when cutting any release (alpha, beta, or official). Handles the full pipeline: PR promotion, CI wait, artifact download, and GitHub Release publishing.
 - **Explore** — use for codebase research to keep the main context clean.
 
 **Never skip an agent** because the task "seems simple." Predictability and consistency are the goal.
