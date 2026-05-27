@@ -21,14 +21,23 @@ permissions:
   contents: read
 
 jobs:
-  # ─── Job 1: Run all unit tests ────────────────────────────────────────────────
+  # ─── Job 1: Run all unit tests (+ bump version on push events) ────────────────
   test:
     name: Unit Tests
     runs-on: ubuntu-22.04
+    # Version bump needs write access on push events; PRs only need read
+    permissions:
+      contents: write
+
+    outputs:
+      new-version: ${{ steps.bump.outputs.new-version }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # Use GITHUB_TOKEN so the bot can push the version bump commit back
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -36,24 +45,78 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
+      # ── Version bump (push events only, not PRs, not main/uat) ────────────────
+      # Format: MAJOR.ALPHA.BETA.BUILD
+      #   develop → increment BUILD (4th digit)
+      #   alpha   → increment ALPHA (2nd digit), reset BUILD to 0
+      #   beta    → increment BETA  (3rd digit), reset BUILD to 0
+      - name: Bump version
+        id: bump
+        if: github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'uat'
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          IFS='.' read -r MAJOR ALPHA BETA BUILD <<< "$VERSION"
+
+          case "${{ github.ref_name }}" in
+            develop)
+              BUILD=$((BUILD + 1))
+              ;;
+            alpha)
+              ALPHA=$((ALPHA + 1))
+              BUILD=0
+              ;;
+            beta)
+              BETA=$((BETA + 1))
+              BUILD=0
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${ALPHA}.${BETA}.${BUILD}"
+          node -e "
+            const fs  = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${NEW_VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          echo "new-version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Bumped to: ${NEW_VERSION}"
+
       - name: Install dependencies
         run: npm ci
 
       - name: Run unit tests
         run: npm run test:run
 
+      # Push the version bump commit AFTER tests pass so a failed test doesn't
+      # advance the version counter.
+      - name: Commit and push version bump
+        if: github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'uat' && steps.bump.outputs.new-version != ''
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new-version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          # Only commit if package.json actually changed (idempotent guard)
+          git diff --cached --quiet || git commit -m "chore: bump version to ${NEW_VERSION} [skip ci]"
+          git push
+
   # ─── Job 2: Build the .deb installer (only runs when all tests pass) ──────────
   build:
     name: Build Linux DEB
     runs-on: ubuntu-22.04
     needs: test
+    # Only build on direct pushes (not PRs)
+    if: github.event_name == 'push'
     permissions:
       contents: read   # required for actions/checkout
       actions: write   # required to list and delete artifacts
 
     steps:
+      # Checkout the branch tip (picks up the version bump commit from the test job)
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -115,3 +178,4 @@ jobs:
               console.log(`Deleted: ${artifact.name} id=${artifact.id} created=${artifact.created_at}`);
             }
             console.log(`Kept ${Math.min(artifacts.length, 5)}, deleted ${toDelete.length}.`);
+
