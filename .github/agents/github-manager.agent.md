@@ -111,6 +111,48 @@ Generate a changelog from merged PRs between two git refs (tags or commits). Use
 2. Call the generate-notes API to get an auto-drafted changelog
 3. Present the draft to the user for review before publishing
 
+### GitHub Releases
+
+Create, publish, and manage GitHub Releases (the published releases with downloadable assets). Used by the **Release Manager** agent after a `main` push creates the CI tag and .deb artifact.
+
+| Task | Command pattern |
+|------|-----------------|
+| List releases | `gh release list --repo <repo> --limit 10` |
+| View release | `gh release view <tag> --repo <repo>` |
+| Download CI artifact | `gh run download <run-id> --repo <repo> --name tech-stack-streamdeck-linux-deb --dir <dir>` |
+| Create & publish release | `gh release create <tag> --repo <repo> --title "v<version>" --notes "<notes>" --latest <asset-path>` |
+| Create draft release | `gh release create <tag> --repo <repo> --title "v<version>" --notes "<notes>" --draft <asset-path>` |
+| Publish a draft | `gh release edit <tag> --repo <repo> --draft=false --latest` |
+| Auto-generate notes | `gh api repos/FritzBlignaut/tech-stack-streamdeck/releases/generate-notes --method POST --field tag_name="<tag>" --field target_commitish="main" --field previous_tag_name="<prev-tag>" --jq '.body'` |
+| Delete release | `gh release delete <tag> --repo <repo> --yes` (confirm with user first) |
+
+**Approach for creating an official release (called by Release Manager):**
+1. Get the latest completed CI run on `main`:
+   ```bash
+   gh run list --repo FritzBlignaut/tech-stack-streamdeck \
+     --branch main --workflow "CI — Test & Build Linux DEB" \
+     --status completed --limit 1 --json databaseId,url --jq '.[0]'
+   ```
+2. Download the .deb artifact from that run:
+   ```bash
+   mkdir -p /tmp/release-assets
+   gh run download <run-id> \
+     --repo FritzBlignaut/tech-stack-streamdeck \
+     --name tech-stack-streamdeck-linux-deb \
+     --dir /tmp/release-assets
+   ```
+3. Auto-generate release notes using the API (with previous tag for comparison)
+4. Create and publish the release:
+   ```bash
+   gh release create <tag> \
+     --repo FritzBlignaut/tech-stack-streamdeck \
+     --title "v<version>" \
+     --notes "<generated-notes>" \
+     --latest \
+     /tmp/release-assets/*.deb
+   ```
+5. Report the release URL and the direct .deb download URL
+
 ### Issue Triage
 
 Scan unlabelled issues and apply appropriate labels based on title/body keywords.
@@ -198,4 +240,4 @@ Inspect and manage Dependabot alerts and code scanning results.
 - DO NOT use GitKraken MCP tools for any operation.
 - DO NOT push commits or amend history.
 - DO NOT create `release/*` branches or tags.
-- DO NOT merge directly to `main` — changes flow develop → alpha → beta → uat → main via promotions.
+- DO NOT merge directly to `main` except as the final step of an official release promotion (uat → main via PR, coordinated by Release Manager).
