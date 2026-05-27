@@ -45,20 +45,21 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
-      # ── Version bump (push events only, not PRs, not main/uat) ────────────────
-      # Display version format: MAJOR.ALPHA.BETA.BUILD  (stored in build.extraMetadata.version)
-      # Semver format:          MAJOR.ALPHA.BETA         (stored in version — required by electron-builder)
+      # ── Version bump (push events only, not PRs, not uat) ─────────────────────
+      # Display version format: RELEASE.BETA.ALPHA.BUILD  (stored in build.extraMetadata.version)
+      # Semver format:          RELEASE.BETA.ALPHA         (stored in version — required by electron-builder)
       #
-      #   develop → increment BUILD (4th digit of extraMetadata.version only)
-      #   alpha   → increment ALPHA (2nd digit), reset BUILD to 0, sync 3-part version
-      #   beta    → increment BETA  (3rd digit), reset BUILD to 0, sync 3-part version
+      #   develop → increment BUILD (4th digit only)
+      #   alpha   → increment ALPHA (3rd digit), reset BUILD to 0
+      #   beta    → increment BETA  (2nd digit), reset ALPHA and BUILD to 0
+      #   main    → increment RELEASE (1st digit), reset BETA/ALPHA/BUILD to 0, tag release/X.0.0.0
       - name: Bump version
         id: bump
-        if: github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'uat'
+        if: github.event_name == 'push' && github.ref_name != 'uat'
         run: |
           # Read the 4-part display version from extraMetadata
           EXT_VERSION=$(node -p "require('./package.json').build.extraMetadata.version")
-          IFS='.' read -r MAJOR ALPHA BETA BUILD <<< "$EXT_VERSION"
+          IFS='.' read -r RELEASE BETA ALPHA BUILD <<< "$EXT_VERSION"
 
           case "${{ github.ref_name }}" in
             develop)
@@ -70,13 +71,20 @@ jobs:
               ;;
             beta)
               BETA=$((BETA + 1))
+              ALPHA=0
+              BUILD=0
+              ;;
+            main)
+              RELEASE=$((RELEASE + 1))
+              BETA=0
+              ALPHA=0
               BUILD=0
               ;;
           esac
 
-          NEW_EXT_VERSION="${MAJOR}.${ALPHA}.${BETA}.${BUILD}"
+          NEW_EXT_VERSION="${RELEASE}.${BETA}.${ALPHA}.${BUILD}"
           # 3-part semver for electron-builder (strips the BUILD digit)
-          NEW_VERSION="${MAJOR}.${ALPHA}.${BETA}"
+          NEW_VERSION="${RELEASE}.${BETA}.${ALPHA}"
 
           node -e "
             const fs  = require('fs');
@@ -97,7 +105,7 @@ jobs:
       # Push the version bump commit AFTER tests pass so a failed test doesn't
       # advance the version counter.
       - name: Commit and push version bump
-        if: github.event_name == 'push' && github.ref_name != 'main' && github.ref_name != 'uat' && steps.bump.outputs.new-version != ''
+        if: github.event_name == 'push' && github.ref_name != 'uat' && steps.bump.outputs.new-version != ''
         run: |
           NEW_VERSION="${{ steps.bump.outputs.new-version }}"
           git config user.name  "github-actions[bot]"
@@ -106,6 +114,14 @@ jobs:
           # Only commit if package.json actually changed (idempotent guard)
           git diff --cached --quiet || git commit -m "chore: bump version to ${NEW_VERSION} [skip ci]"
           git push
+
+      # On main: create a release tag after the version bump commit is pushed.
+      - name: Tag release
+        if: github.event_name == 'push' && github.ref_name == 'main' && steps.bump.outputs.new-version != ''
+        run: |
+          TAG="release/${{ steps.bump.outputs.new-version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
 
   # ─── Job 2: Build the .deb installer (only runs when all tests pass) ──────────
   build:
