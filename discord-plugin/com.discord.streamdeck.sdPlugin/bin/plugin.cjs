@@ -34,9 +34,40 @@ try {
   console.warn(`[${pluginUUID}] WARNING: xdotool not found. Install it with: sudo apt install xdotool`)
 }
 
+/**
+ * Find Discord's X11 window ID so we can send key events directly to it.
+ * Without targeting a specific window, xdotool sends to the currently focused
+ * window — which is the tech-stack-streamdeck Electron app when a Stream Deck
+ * button is pressed.  Targeting Discord's window ensures the event reaches
+ * Discord even when it is not focused.
+ *
+ * Returns the window ID string, or null if Discord is not running / not found.
+ */
+function getDiscordWindowId() {
+  // Try by window class first (most reliable — matches the Electron app class)
+  const byClass = spawnSync('xdotool', ['search', '--class', 'discord'], { stdio: 'pipe' })
+  if (byClass.status === 0) {
+    const ids = byClass.stdout.toString().trim().split('\n').filter(Boolean)
+    if (ids.length > 0) return ids[ids.length - 1] // last = most recently active
+  }
+  // Fallback: search by window title
+  const byName = spawnSync('xdotool', ['search', '--name', 'Discord'], { stdio: 'pipe' })
+  if (byName.status === 0) {
+    const ids = byName.stdout.toString().trim().split('\n').filter(Boolean)
+    if (ids.length > 0) return ids[ids.length - 1]
+  }
+  console.warn(`[${pluginUUID}] Could not find Discord window — sending key to focused window instead`)
+  return null
+}
+
 function xdotoolKey(hotkey) {
   if (!xdotoolAvailable) return
-  const result = spawnSync('xdotool', ['key', hotkey], { stdio: 'pipe' })
+  const winId = getDiscordWindowId()
+  const args = winId
+    ? ['key', '--clearmodifiers', '--window', winId, hotkey]
+    : ['key', '--clearmodifiers', hotkey]
+  console.log(`[${pluginUUID}] xdotool ${args.join(' ')}`)
+  const result = spawnSync('xdotool', args, { stdio: 'pipe' })
   if (result.status !== 0) {
     console.warn(`[${pluginUUID}] xdotool key failed for "${hotkey}":`, result.stderr?.toString().trim())
   }
@@ -44,7 +75,12 @@ function xdotoolKey(hotkey) {
 
 function xdotoolKeyDown(hotkey) {
   if (!xdotoolAvailable) return
-  const result = spawnSync('xdotool', ['keydown', hotkey], { stdio: 'pipe' })
+  const winId = getDiscordWindowId()
+  const args = winId
+    ? ['keydown', '--clearmodifiers', '--window', winId, hotkey]
+    : ['keydown', '--clearmodifiers', hotkey]
+  console.log(`[${pluginUUID}] xdotool ${args.join(' ')}`)
+  const result = spawnSync('xdotool', args, { stdio: 'pipe' })
   if (result.status !== 0) {
     console.warn(`[${pluginUUID}] xdotool keydown failed for "${hotkey}":`, result.stderr?.toString().trim())
   }
@@ -52,7 +88,12 @@ function xdotoolKeyDown(hotkey) {
 
 function xdotoolKeyUp(hotkey) {
   if (!xdotoolAvailable) return
-  const result = spawnSync('xdotool', ['keyup', hotkey], { stdio: 'pipe' })
+  const winId = getDiscordWindowId()
+  const args = winId
+    ? ['keyup', '--clearmodifiers', '--window', winId, hotkey]
+    : ['keyup', '--clearmodifiers', hotkey]
+  console.log(`[${pluginUUID}] xdotool ${args.join(' ')}`)
+  const result = spawnSync('xdotool', args, { stdio: 'pipe' })
   if (result.status !== 0) {
     console.warn(`[${pluginUUID}] xdotool keyup failed for "${hotkey}":`, result.stderr?.toString().trim())
   }
