@@ -1211,6 +1211,82 @@
   border-color: #703030;
 }
 
+/* ── Icon side-by-side grid (Default / Pressed) ──────── */
+.icons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.icon-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.icon-slot-preview {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px dashed #2e2e2e;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e1e1e;
+}
+
+.icon-slot-preview:hover {
+  border-color: #0082ff;
+}
+
+.icon-slot-preview:hover .icon-picker-placeholder {
+  color: #666;
+}
+
+.icon-slot-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #484848;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.icon-slot-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.icon-slot-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: #222;
+  border: 1px solid #2e2e2e;
+  color: #666;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.icon-slot-btn:hover {
+  background: #2e2e2e;
+  color: #bbb;
+}
+
+.icon-slot-btn.icon-slot-remove:hover {
+  color: #e05555;
+  border-color: #703030;
+  background: rgba(224, 85, 85, 0.07);
+}
+
 /* ── Context menu ────────────────────────────────────── */
 .context-menu {
   position: fixed;

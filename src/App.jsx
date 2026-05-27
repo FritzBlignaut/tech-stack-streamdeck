@@ -1572,71 +1572,72 @@ function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profil
         <div className="prop-section">
           <span className="prop-label">Icon</span>
 
-          <span className="prop-label-sm">Default</span>
-          <div className="icon-picker-area" onClick={() => fileInputRef.current?.click()}>
-            {config?.iconDataUrl ? (
-              <img src={config.iconDataUrl} className="icon-preview" alt="Button icon" />
-            ) : (
-              <div className="icon-picker-placeholder">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
-                  <rect x="3" y="3" width="18" height="18" rx="3" />
-                  <path d="M12 8v8M8 12h8" />
-                </svg>
-                <span>Add image</span>
+          <div className="icons-grid">
+            {/* Default icon slot */}
+            <div className="icon-slot">
+              <div className="icon-slot-preview" onClick={() => fileInputRef.current?.click()}>
+                {config?.iconDataUrl ? (
+                  <img src={config.iconDataUrl} className="icon-preview" alt="Button icon" />
+                ) : (
+                  <div className="icon-picker-placeholder">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="22" height="22">
+                      <rect x="3" y="3" width="18" height="18" rx="3" />
+                      <path d="M12 8v8M8 12h8" />
+                    </svg>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div className="icon-action-row">
-            <button className="icon-lib-open-btn" onClick={() => setLibraryTarget('default')}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
-                <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
-              </svg>
-              Icon Library
-            </button>
-            {config?.iconDataUrl && (
-              <button className="icon-remove-btn" onClick={removeIcon}>Remove</button>
-            )}
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={handleIconSelect}
-          />
+              <span className="icon-slot-label">Default</span>
+              <div className="icon-slot-actions">
+                <button className="icon-slot-btn" title="Icon Library" onClick={() => setLibraryTarget('default')}>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+                    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
+                  </svg>
+                </button>
+                {config?.iconDataUrl && (
+                  <button className="icon-slot-btn icon-slot-remove" title="Remove icon" onClick={removeIcon}>
+                    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" width="10" height="10" strokeLinecap="round">
+                      <path d="M1 1l8 8M9 1L1 9" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
 
-          <span className="prop-label-sm" style={{ marginTop: 10 }}>Pressed</span>
-          <div className="icon-picker-area" onClick={() => pressedFileInputRef.current?.click()}>
-            {config?.pressedIconDataUrl ? (
-              <img src={config.pressedIconDataUrl} className="icon-preview" alt="Pressed icon" />
-            ) : (
-              <div className="icon-picker-placeholder">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="24" height="24">
-                  <rect x="3" y="3" width="18" height="18" rx="3" />
-                  <path d="M12 8v8M8 12h8" />
-                </svg>
-                <span>Add image</span>
+            {/* Pressed icon slot */}
+            <div className="icon-slot">
+              <div className="icon-slot-preview" onClick={() => pressedFileInputRef.current?.click()}>
+                {config?.pressedIconDataUrl ? (
+                  <img src={config.pressedIconDataUrl} className="icon-preview" alt="Pressed icon" />
+                ) : (
+                  <div className="icon-picker-placeholder">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="22" height="22">
+                      <rect x="3" y="3" width="18" height="18" rx="3" />
+                      <path d="M12 8v8M8 12h8" />
+                    </svg>
+                  </div>
+                )}
               </div>
-            )}
+              <span className="icon-slot-label">Pressed</span>
+              <div className="icon-slot-actions">
+                <button className="icon-slot-btn" title="Icon Library" onClick={() => setLibraryTarget('pressed')}>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
+                    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
+                  </svg>
+                </button>
+                {config?.pressedIconDataUrl && (
+                  <button className="icon-slot-btn icon-slot-remove" title="Remove pressed icon" onClick={removePressedIcon}>
+                    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" width="10" height="10" strokeLinecap="round">
+                      <path d="M1 1l8 8M9 1L1 9" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="icon-action-row">
-            <button className="icon-lib-open-btn" onClick={() => setLibraryTarget('pressed')}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="13" height="13">
-                <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 2H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3.5A1.5 1.5 0 0 1 2 11.5v-7z" />
-              </svg>
-              Icon Library
-            </button>
-            {config?.pressedIconDataUrl && (
-              <button className="icon-remove-btn" onClick={removePressedIcon}>Remove</button>
-            )}
-          </div>
-          <input
-            ref={pressedFileInputRef}
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={handlePressedIconSelect}
-          />
+
+          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleIconSelect} />
+          <input ref={pressedFileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePressedIconSelect} />
 
           {libraryTarget && (
             <IconLibraryModal
