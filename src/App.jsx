@@ -2479,9 +2479,9 @@ export default function App() {
       setPressedKey(p => p === index ? null : p)
       const config = buttonConfigsRef.current[index]
       // Forward keyUp to plugin processes (needed for Push-to-Talk / Push-to-Mute)
-      if (config?.type?.includes('.')) {
-        const context = JSON.stringify({ index, actionUUID: config.type, pluginUUID: config.pluginUUID })
-        window.streamDeck?.sendToPlugin?.(config.pluginUUID, config.type, 'keyUp', { ...config }, context)
+      if (config?.action?.type?.includes('.')) {
+        const context = JSON.stringify({ index, actionUUID: config.action.type, pluginUUID: config.action.pluginUUID })
+        window.streamDeck?.sendToPlugin?.(config.action.pluginUUID, config.action.type, 'keyUp', { ...config.action }, context)
       }
 
       if (config?.pressedIconDataUrl) {
