@@ -36,6 +36,12 @@
       "electron/**",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "public/bridge/sdpi-bridge.js",
+        "to": "bridge/sdpi-bridge.js"
+      }
+    ],
     "linux": {
       "target": [
         {
