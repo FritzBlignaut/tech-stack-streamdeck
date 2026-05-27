@@ -5,10 +5,16 @@ on:
     branches:
       - develop
       - main
+      - alpha
+      - beta
+      - uat
   pull_request:
     branches:
       - develop
       - main
+      - alpha
+      - beta
+      - uat
 
 # Least-privilege default: all jobs get read-only access unless overridden
 permissions:
