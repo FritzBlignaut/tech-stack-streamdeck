@@ -34,27 +34,89 @@ try {
   console.warn(`[${pluginUUID}] WARNING: xdotool not found. Install it with: sudo apt install xdotool`)
 }
 
+/**
+ * Find Discord's X11 window ID.
+ * Returns the window ID string, or null if Discord is not running / not found.
+ */
+function getDiscordWindowId() {
+  // Try by window class first (most reliable)
+  const byClass = spawnSync('xdotool', ['search', '--class', 'discord'], { stdio: 'pipe' })
+  if (byClass.status === 0) {
+    const ids = byClass.stdout.toString().trim().split('\n').filter(Boolean)
+    if (ids.length > 0) return ids[ids.length - 1]
+  }
+  // Fallback: search by window title
+  const byName = spawnSync('xdotool', ['search', '--name', 'Discord'], { stdio: 'pipe' })
+  if (byName.status === 0) {
+    const ids = byName.stdout.toString().trim().split('\n').filter(Boolean)
+    if (ids.length > 0) return ids[ids.length - 1]
+  }
+  console.warn(`[${pluginUUID}] Could not find Discord window — sending key to focused window instead`)
+  return null
+}
+
+/**
+ * Focus `winId`, run `action()`, then restore focus to the previously active
+ * window.  Uses XTestFakeKeyEvent (not XSendEvent) so Electron/Chromium treats
+ * the event as a trusted hardware input (isTrusted=true in JavaScript).
+ * xdotool key --window uses XSendEvent which Discord ignores.
+ */
+function withDiscordFocus(winId, action) {
+  const prevResult = spawnSync('xdotool', ['getactivewindow'], { stdio: 'pipe' })
+  const prevWinId  = prevResult.status === 0 ? prevResult.stdout.toString().trim() : null
+
+  spawnSync('xdotool', ['windowfocus', '--sync', winId], { stdio: 'pipe' })
+  action()
+  if (prevWinId && prevWinId !== winId) {
+    spawnSync('xdotool', ['windowfocus', '--sync', prevWinId], { stdio: 'pipe' })
+  }
+}
+
 function xdotoolKey(hotkey) {
   if (!xdotoolAvailable) return
-  const result = spawnSync('xdotool', ['key', hotkey], { stdio: 'pipe' })
-  if (result.status !== 0) {
-    console.warn(`[${pluginUUID}] xdotool key failed for "${hotkey}":`, result.stderr?.toString().trim())
+  const winId = getDiscordWindowId()
+  const args  = ['key', '--clearmodifiers', hotkey]
+  console.log(`[${pluginUUID}] xdotool${winId ? ' (via Discord focus)' : ''} ${args.join(' ')}`)
+  if (winId) {
+    withDiscordFocus(winId, () => {
+      const r = spawnSync('xdotool', args, { stdio: 'pipe' })
+      if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool key failed:`, r.stderr?.toString().trim())
+    })
+  } else {
+    const r = spawnSync('xdotool', args, { stdio: 'pipe' })
+    if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool key failed:`, r.stderr?.toString().trim())
   }
 }
 
 function xdotoolKeyDown(hotkey) {
   if (!xdotoolAvailable) return
-  const result = spawnSync('xdotool', ['keydown', hotkey], { stdio: 'pipe' })
-  if (result.status !== 0) {
-    console.warn(`[${pluginUUID}] xdotool keydown failed for "${hotkey}":`, result.stderr?.toString().trim())
+  const winId = getDiscordWindowId()
+  const args  = ['keydown', '--clearmodifiers', hotkey]
+  console.log(`[${pluginUUID}] xdotool${winId ? ' (via Discord focus)' : ''} ${args.join(' ')}`)
+  if (winId) {
+    withDiscordFocus(winId, () => {
+      const r = spawnSync('xdotool', args, { stdio: 'pipe' })
+      if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool keydown failed:`, r.stderr?.toString().trim())
+    })
+  } else {
+    const r = spawnSync('xdotool', args, { stdio: 'pipe' })
+    if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool keydown failed:`, r.stderr?.toString().trim())
   }
 }
 
 function xdotoolKeyUp(hotkey) {
   if (!xdotoolAvailable) return
-  const result = spawnSync('xdotool', ['keyup', hotkey], { stdio: 'pipe' })
-  if (result.status !== 0) {
-    console.warn(`[${pluginUUID}] xdotool keyup failed for "${hotkey}":`, result.stderr?.toString().trim())
+  const winId = getDiscordWindowId()
+  const args  = ['keyup', '--clearmodifiers', hotkey]
+  console.log(`[${pluginUUID}] xdotool${winId ? ' (via Discord focus)' : ''} ${args.join(' ')}`)
+  if (winId) {
+    withDiscordFocus(winId, () => {
+      const r = spawnSync('xdotool', args, { stdio: 'pipe' })
+      if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool keyup failed:`, r.stderr?.toString().trim())
+    })
+  } else {
+    const r = spawnSync('xdotool', args, { stdio: 'pipe' })
+    if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool keyup failed:`, r.stderr?.toString().trim())
   }
 }
 
