@@ -186,6 +186,14 @@ The Scene, Scene Collection, Source, Input, and Transition pickers in the Proper
 
 ## Installation
 
+### Installing from the pre-built package (recommended)
+
+Download the latest `.deb` from the [Releases page](https://github.com/FritzBlignaut/tech-stack-streamdeck/releases) and follow the step-by-step guide:
+
+📖 **[Installation Guide](docs/installation-guide.md)** — covers dependency setup, `.deb` install, udev rules, and first-launch verification.
+
+### Building from source (developers)
+
 ```bash
 # 1. Clone the repo
 git clone https://github.com/your-username/tech-stack-streamdeck.git
