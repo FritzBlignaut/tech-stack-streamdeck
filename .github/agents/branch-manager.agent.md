@@ -29,25 +29,25 @@ hotfix/* ───────────────────────�
 
 **Releases are git tags** (`release/x.y.z`), not branches. They are created automatically by CI when code merges into `main`. Never create a `release/` branch manually.
 
-### Version Format: `MAJOR.ALPHA.BETA.BUILD`
+### Version Format: `RELEASE.BETA.ALPHA.BUILD`
 
-| Digit | Bumped by | Example |
-|-------|-----------|---------|
-| MAJOR | Manual | `2.0.0.0` |
-| ALPHA | Merge to `alpha` | `1.3.0.0` |
-| BETA  | Merge to `beta`  | `1.3.2.0` |
-| BUILD | Merge to `develop` | `1.3.2.47` |
+| Digit | Bumped by | Resets | Example |
+|-------|-----------|--------|---------|
+| RELEASE | Merge to `main` (automated) | BETA=0, ALPHA=0, BUILD=0 | `1.0.0.0` |
+| BETA    | Merge to `beta`             | ALPHA=0, BUILD=0         | `0.1.0.0` |
+| ALPHA   | Merge to `alpha`            | BUILD=0                  | `0.0.2.0` |
+| BUILD   | Merge to `develop`          | —                        | `0.0.1.47` |
 
 ### CI/CD per Branch
 
-| Branch | Tests | Docker Image Tag | Version Bump |
-|--------|-------|-----------------|--------------|
-| `feature/*` | Unit tests | — | — |
-| `develop` | Unit + e2e | `dev-{build}` | BUILD digit |
-| `alpha` | All tests | `alpha-1.x.0.0` | ALPHA digit |
-| `beta` | All + perf/load | `beta-1.0.x.0` | BETA digit |
-| `uat` | Smoke tests (vs anonymised prod data) | Same as prod image | — |
-| `main` | — | `1.2.3.4` (prod) | Creates `release/x.y.z` tag |
+| Branch | Tests | Version Bump |
+|--------|-------|--------------|
+| `feature/*` | Unit tests | — |
+| `develop` | Unit + build | BUILD digit |
+| `alpha` | Unit + build | ALPHA digit, BUILD→0 |
+| `beta` | Unit + build | BETA digit, ALPHA→0, BUILD→0 |
+| `uat` | Smoke tests | none |
+| `main` | Unit + build | RELEASE digit, all others→0; tags `release/X.0.0.0` |
 
 ### Naming Rules
 
