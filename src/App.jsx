@@ -1462,6 +1462,62 @@ function PluginInspector({ action, onChange, pluginManifests = [] }) {
   )
 }
 
+// ─── Help / Documentation menu ──────────────────────────────
+const HELP_LINKS = [
+  { label: 'User Manual',        url: 'https://github.com/FritzBlignaut/tech-stack-streamdeck/wiki/User-Manual' },
+  { label: 'Installation Guide', url: 'https://github.com/FritzBlignaut/tech-stack-streamdeck/wiki/Installation-Guide' },
+  { label: 'Release Notes',      url: 'https://github.com/FritzBlignaut/tech-stack-streamdeck/releases' },
+]
+
+function HelpMenu() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="help-menu-wrapper" ref={ref}>
+      <button
+        className={`icon-btn${open ? ' active' : ''}`}
+        title="Help &amp; Documentation"
+        onClick={() => setOpen(o => !o)}
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="8" cy="8" r="2.5" />
+          <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.27 1.27M11.33 11.33l1.27 1.27M3.4 12.6l1.27-1.27M11.33 4.67l1.27-1.27" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="help-menu">
+          <div className="help-menu-section-label">Documentation</div>
+          {HELP_LINKS.map(({ label, url }) => (
+            <button
+              key={url}
+              className="help-menu-item"
+              onClick={() => { window.streamDeck?.openUrl(url); setOpen(false) }}
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="14" height="14">
+                <path d="M3 3h5v1.5H4.5v7h7V9H13v3.5a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+                <path d="M9 2.5h4.5V7" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M13.5 2.5L8 8" strokeLinecap="round" />
+              </svg>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PropertiesPanel({ keyIndex, onClose, config, onChange, iconSize, profiles, pageCount, onEnterFolder, pluginManifests = [] }) {
   const fileInputRef        = useRef(null)
   const pressedFileInputRef = useRef(null)
@@ -2606,12 +2662,7 @@ export default function App() {
             </svg>
           </button>
 
-          <button className="icon-btn" title="Settings">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="8" cy="8" r="2.5" />
-              <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.27 1.27M11.33 11.33l1.27 1.27M3.4 12.6l1.27-1.27M11.33 4.67l1.27-1.27" />
-            </svg>
-          </button>
+          <HelpMenu />
           {appVersion && <span className="app-version">v{appVersion}-{__GIT_HASH__}</span>}
         </div>
       </header>

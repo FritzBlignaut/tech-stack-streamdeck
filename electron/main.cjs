@@ -221,9 +221,18 @@ function sendToRenderer(channel, data) {
 }
 
 function createWindow() {
+  const iconPath = app.isPackaged
+    ? path.join(__dirname, '../dist/tech_stack_streamdeck.png')
+    : path.join(__dirname, '../public/tech_stack_streamdeck.png')
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    minWidth: 960,
+    minHeight: 640,
+    title: 'Tech Stack Studios - Streamdeck',
+    maximizable: false,
+    icon: iconPath,
     autoHideMenuBar: true,
     backgroundColor: '#1a1a1a',
     webPreferences: {
@@ -244,6 +253,9 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  // Prevent the HTML page title from overriding the window title
+  mainWindow.on('page-title-updated', e => { e.preventDefault() })
 
   // Hide to tray on close unless a real quit was requested
   mainWindow.on('close', e => {

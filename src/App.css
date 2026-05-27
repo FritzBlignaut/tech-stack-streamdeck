@@ -286,11 +286,69 @@
   user-select: text;
 }
 
+/* ─── Help / Documentation menu ─────────────────────────── */
+.help-menu-wrapper {
+  position: relative;
+}
+
+.icon-btn.active {
+  background: #252525;
+  color: #bbb;
+}
+
+.help-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: #252525;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 6px 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  z-index: 200;
+}
+
+.help-menu-section-label {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.help-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: none;
+  border: none;
+  color: #e0e0e0;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+  text-align: left;
+}
+
+.help-menu-item:hover {
+  background: #303030;
+}
+
+.help-menu-item svg {
+  flex-shrink: 0;
+  color: #666;
+}
+
 /* ─── Workspace ──────────────────────────────────────────── */
 .workspace {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 /* ─── Actions panel ──────────────────────────────────────── */
@@ -724,18 +782,22 @@
 
 /* ─── Properties panel ───────────────────────────────────── */
 .properties-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
   width: 280px;
-  flex-shrink: 0;
   background: #1c1c1c;
   border-left: 1px solid #262626;
   display: flex;
   flex-direction: column;
-  animation: panel-in 0.14s ease;
+  z-index: 10;
+  animation: panel-in 0.18s ease;
 }
 
 @keyframes panel-in {
   from {
-    transform: translateX(16px);
+    transform: translateX(100%);
     opacity: 0;
   }
   to {
