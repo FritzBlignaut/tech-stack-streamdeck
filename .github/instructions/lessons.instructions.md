@@ -89,7 +89,13 @@ This ensures work is isolated, traceable to the issue, and can be reviewed via a
 
 **Never skip an agent** because the task "seems simple." Predictability and consistency are the goal.
 
-## 2026-05-25 — Pre-flight checklist is step 0, not optional, not abbreviated
+## 2026-05-27 — Run git branch --show-current before EVERY edit, not just at session start
+
+**Mistake:** Did not run `git branch --show-current` before making file edits mid-conversation. The user had switched to `develop` between requests (likely after merging a PR). The commit landed directly on `develop` — a direct violation of the branch rule.
+
+**Rule:** `git branch --show-current` MUST be run as the very first thing in every response, **before any file read, edit, or plan**. Not just at session start. Not just for "new tasks". Every. Single. Response. If the result is `develop` or `main`, stop immediately and invoke Branch Manager before touching anything.
+
+**The pre-flight is not a session-start ritual — it is per-response and unconditional.**
 
 **Mistake:** Trusted the Branch Manager agent's return message ("Branch created: feature/discord-plugin") as proof that the terminal was on that branch. Did not run `git branch --show-current` before making changes. Also did not read `lessons.instructions.md` at the start of the response. Changes landed on the correct branch by luck, but the process was broken.
 
