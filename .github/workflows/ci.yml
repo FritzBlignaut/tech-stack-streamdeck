@@ -1,0 +1,111 @@
+name: CI — Test & Build Linux DEB
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+
+# Least-privilege default: all jobs get read-only access unless overridden
+permissions:
+  contents: read
+
+jobs:
+  # ─── Job 1: Run all unit tests ────────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:run
+
+  # ─── Job 2: Build the .deb installer (only runs when all tests pass) ──────────
+  build:
+    name: Build Linux DEB
+    runs-on: ubuntu-22.04
+    needs: test
+    permissions:
+      contents: read   # required for actions/checkout
+      actions: write   # required to list and delete artifacts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # System libraries required to compile native modules:
+      #   node-hid  → libudev-dev + libusb-1.0-0-dev
+      #   sharp     → bundles its own libvips; only needs a C++ toolchain
+      - name: Install system build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            libudev-dev \
+            libusb-1.0-0-dev \
+            build-essential \
+            python3
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build renderer (Vite)
+        run: npm run build
+
+      - name: Package Linux DEB
+        run: npx electron-builder --linux deb --publish=never
+
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: tech-stack-streamdeck-linux-deb
+          path: dist-electron/*.deb
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Delete old artifacts (keep 5 most recent)
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { data } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'tech-stack-streamdeck-linux-deb',
+              per_page: 100,
+            });
+
+            const artifacts = data.artifacts
+              .filter(a => !a.expired)
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            const toDelete = artifacts.slice(5);
+            for (const artifact of toDelete) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id,
+              });
+              console.log(`Deleted: ${artifact.name} id=${artifact.id} created=${artifact.created_at}`);
+            }
+            console.log(`Kept ${Math.min(artifacts.length, 5)}, deleted ${toDelete.length}.`);
