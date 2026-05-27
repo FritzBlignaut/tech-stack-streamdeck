@@ -1,8 +1,11 @@
 {
   "name": "tech-stack-streamdeck",
-  "author": {"name": "Fritz Blignaut", "email": "fritz.blignaut@gmail.com"},
+  "author": {
+    "name": "Fritz Blignaut",
+    "email": "fritz.blignaut@gmail.com"
+  },
   "private": true,
-  "version": "1.0.0.0",
+  "version": "1.0.0.1",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -32,8 +35,18 @@
     ],
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb",      "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "Utility",
       "executableName": "tech-stack-streamdeck"
