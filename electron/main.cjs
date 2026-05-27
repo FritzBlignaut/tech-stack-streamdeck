@@ -232,6 +232,7 @@ function createWindow() {
     minHeight: 640,
     title: 'Tech Stack Studios - Streamdeck',
     maximizable: false,
+    fullscreenable: false,
     icon: iconPath,
     autoHideMenuBar: true,
     backgroundColor: '#1a1a1a',
@@ -256,6 +257,9 @@ function createWindow() {
 
   // Prevent the HTML page title from overriding the window title
   mainWindow.on('page-title-updated', e => { e.preventDefault() })
+
+  // On Linux the window manager can maximize despite maximizable:false — force it back
+  mainWindow.on('maximize', () => mainWindow.unmaximize())
 
   // Hide to tray on close unless a real quit was requested
   mainWindow.on('close', e => {
