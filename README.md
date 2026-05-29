@@ -22,6 +22,7 @@ The **official Elgato Stream Deck software does not support Linux**. This projec
 ## Table of Contents
 
 - [Features](#features)
+- [Installing OBS Studio & Discord Plugins](#-installing-the-obs-studio--discord-plugins)
 - [What It Cannot Do (Yet)](#what-it-cannot-do-yet)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -87,6 +88,50 @@ OBS Studio and Discord support are distributed as separate `.sdPlugin` packages.
 |--------|---------|----------|
 | **OBS Studio** (`obs-plugin/`) | Toggle record, toggle stream, pause recording, replay buffer, switch scene, switch collection, source visibility, mute, media control, studio mode, filter toggle, screenshot, transition, chapter marker | OBS WebSocket |
 | **Discord** (`discord-plugin/`) | Push-to-Talk, Mute, Deafen | `xdotool` |
+
+---
+
+> [!IMPORTANT]
+> ## 🔌 Installing the OBS Studio & Discord Plugins
+>
+> OBS Studio and Discord support ship as **separate plugin packages** — they are **not active by default**.
+> You must copy the plugin folder to the correct location before the app will discover them.
+>
+> ### Where they live in this repo
+>
+> ```
+> tech-stack-streamdeck/
+> ├── obs-plugin/
+> │   └── com.obs.streamdeck.sdPlugin/   ← copy this entire folder
+> └── discord-plugin/
+>     └── com.discord.streamdeck.sdPlugin/  ← copy this entire folder
+> ```
+>
+> ### How to install
+>
+> ```bash
+> # 1. Create the plugins directory (one-time setup)
+> mkdir -p ~/.config/tech-stack-streamdeck/plugins
+>
+> # 2a. Install OBS Studio plugin
+> cp -r obs-plugin/com.obs.streamdeck.sdPlugin \
+>   ~/.config/tech-stack-streamdeck/plugins/
+>
+> # 2b. Install Discord plugin
+> cp -r discord-plugin/com.discord.streamdeck.sdPlugin \
+>   ~/.config/tech-stack-streamdeck/plugins/
+> ```
+>
+> **Restart the app after installing.** Plugin actions appear in the action picker under their own category ("OBS Studio" / "Discord").
+>
+> ### Plugin prerequisites
+>
+> | Plugin | Extra setup required |
+> |--------|---------------------|
+> | **OBS Studio** | Open OBS → **Tools → WebSocket Server Settings** → enable the server (default port **4455**). The plugin auto-connects and retries every 5 s. |
+> | **Discord** | Ensure `xdotool` is installed (`sudo apt install xdotool`). Open Discord and configure your Push-to-Talk / Mute / Deafen keys there. |
+>
+> To uninstall a plugin, delete its folder from `~/.config/tech-stack-streamdeck/plugins/` and restart the app.
 
 ---
 
@@ -188,9 +233,7 @@ The Scene, Scene Collection, Source, Input, and Transition pickers in the Proper
 
 ### Installing from the pre-built package (recommended)
 
-Download the latest `.deb` from the [Releases page](https://github.com/FritzBlignaut/tech-stack-streamdeck/releases) and follow the step-by-step guide:
-
-📖 **[Installation Guide](docs/installation-guide.md)** — covers dependency setup, `.deb` install, udev rules, and first-launch verification.
+Download the latest `.deb` from the [Releases page](https://github.com/FritzBlignaut/tech-stack-streamdeck/releases).
 
 ### Building from source (developers)
 
