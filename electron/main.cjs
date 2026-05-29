@@ -544,9 +544,12 @@ function registerIpcHandlers() {
       return { ok: false, error: 'Invalid manifest: missing UUID or Actions array' }
     }
     const destDir = path.join(getPluginsDir(), `${manifest.UUID}.sdPlugin`)
+    // Stop and remove any existing installation with the same UUID (handles reinstall)
+    stopPlugin(manifest.UUID)
+    pluginManifests = pluginManifests.filter(p => p.manifest.UUID !== manifest.UUID)
     try {
       await fs.promises.mkdir(getPluginsDir(), { recursive: true })
-      await fs.promises.cp(resolved, destDir, { recursive: true })
+      await fs.promises.cp(resolved, destDir, { recursive: true, force: true })
     } catch (err) {
       return { ok: false, error: err.message }
     }
