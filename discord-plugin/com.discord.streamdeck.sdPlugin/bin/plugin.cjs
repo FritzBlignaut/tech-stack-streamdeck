@@ -37,19 +37,27 @@ try {
 /**
  * Find Discord's X11 window ID.
  * Returns the window ID string, or null if Discord is not running / not found.
+ *
+ * Strategy: search by window NAME "Discord" first. Discord's main application
+ * window has a title of "Discord" (or "Discord - #channel"), while the GPU
+ * process, renderer sub-windows, and utility windows have empty or internal
+ * titles that do NOT contain "Discord". Taking the first (oldest) result from
+ * the name search reliably returns the main window across all button presses,
+ * even after Discord briefly gains and loses focus (which can cause it to
+ * create additional sub-windows, making a last-ID strategy unreliable).
  */
 function getDiscordWindowId() {
-  // Try by window class first (most reliable)
-  const byClass = spawnSync('xdotool', ['search', '--class', 'discord'], { stdio: 'pipe' })
-  if (byClass.status === 0) {
-    const ids = byClass.stdout.toString().trim().split('\n').filter(Boolean)
-    if (ids.length > 0) return ids[ids.length - 1]
-  }
-  // Fallback: search by window title
+  // Primary: name search — matches only the main Discord application window
   const byName = spawnSync('xdotool', ['search', '--name', 'Discord'], { stdio: 'pipe' })
   if (byName.status === 0) {
     const ids = byName.stdout.toString().trim().split('\n').filter(Boolean)
-    if (ids.length > 0) return ids[ids.length - 1]
+    if (ids.length > 0) return ids[0]
+  }
+  // Fallback: class search — take the first (oldest/main) window
+  const byClass = spawnSync('xdotool', ['search', '--class', 'discord'], { stdio: 'pipe' })
+  if (byClass.status === 0) {
+    const ids = byClass.stdout.toString().trim().split('\n').filter(Boolean)
+    if (ids.length > 0) return ids[0]
   }
   console.warn(`[${pluginUUID}] Could not find Discord window — sending key to focused window instead`)
   return null
