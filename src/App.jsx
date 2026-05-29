@@ -1415,7 +1415,7 @@ function PluginInspector({ action, onChange, pluginManifests = [] }) {
           '*'
         )
       } else if (e.data.type === 'sdpi:sendToPlugin') {
-        window.streamDeck?.sendToPlugin?.(pluginUUID, actionUUID, 'sendToPropertyInspector', e.data.payload, null)
+        window.streamDeck?.sendToPlugin?.(pluginUUID, actionUUID, 'sendToPlugin', e.data.payload, null)
       }
     }
     const piHandler = e => {
