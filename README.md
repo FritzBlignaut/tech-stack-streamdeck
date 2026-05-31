@@ -7,7 +7,7 @@
 [![Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Node](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![License](https://img.shields.io/badge/licence-Proprietary-red)](#licence)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 ---
 
