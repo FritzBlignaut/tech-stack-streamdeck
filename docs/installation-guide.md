@@ -57,7 +57,7 @@ Each command should print a version number. If any of them prints `command not f
 ## Step 2 — Download the `.deb` Package
 
 1. Open your web browser and go to the **Releases** page:  
-   **https://github.com/FritzBlignaut/tech-stack-streamdeck/releases**
+   **https://github.com/tech-stack-studios/tech-stack-streamdeck/releases**
 
 2. Click on the **latest release** (at the top of the list).
 
@@ -267,4 +267,4 @@ If you want the app to start automatically when you log in:
 
 ---
 
-*For more information, visit the [project repository](https://github.com/FritzBlignaut/tech-stack-streamdeck).*
+*For more information, visit the [project repository](https://github.com/tech-stack-studios/tech-stack-streamdeck).*

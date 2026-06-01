@@ -233,7 +233,7 @@ The Scene, Scene Collection, Source, Input, and Transition pickers in the Proper
 
 ### Installing from the pre-built package (recommended)
 
-Download the latest `.deb` from the [Releases page](https://github.com/FritzBlignaut/tech-stack-streamdeck/releases).
+Download the latest `.deb` from the [Releases page](https://github.com/tech-stack-studios/tech-stack-streamdeck/releases).
 
 ### Building from source (developers)
 
