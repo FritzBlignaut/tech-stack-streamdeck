@@ -42,7 +42,7 @@ applyTo: "**"
 **Issue creation template:**
 ```bash
 gh issue create \
-  --repo FritzBlignaut/tech-stack-streamdeck \
+  --repo tech-stack-studios/tech-stack-streamdeck \
   --title "..." \
   --label "bug" \
   --body "..."
