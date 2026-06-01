@@ -1,0 +1,75 @@
+{
+  "UUID": "com.discord.streamdeck",
+  "Name": "Discord",
+  "Version": "1.0.0",
+  "Author": "tech-stack-streamdeck",
+  "Description": "Control Discord from your Stream Deck. Mute, deafen, push-to-talk, switch channels, and more.",
+  "Category": "Discord",
+  "CodePath": "bin/plugin.cjs",
+  "Actions": [
+    {
+      "UUID": "com.discord.streamdeck.mute",
+      "Name": "Mute / Unmute",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [
+        { "Title": "Mute", "Image": "" }
+      ]
+    },
+    {
+      "UUID": "com.discord.streamdeck.deafen",
+      "Name": "Deafen / Undeafen",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [
+        { "Title": "Deafen", "Image": "" }
+      ]
+    },
+    {
+      "UUID": "com.discord.streamdeck.ptt",
+      "Name": "Push to Talk",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [
+        { "Title": "PTT", "Image": "" }
+      ]
+    },
+    {
+      "UUID": "com.discord.streamdeck.ptm",
+      "Name": "Push to Mute",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [
+        { "Title": "PTM", "Image": "" }
+      ]
+    },
+    {
+      "UUID": "com.discord.streamdeck.voice-channel",
+      "Name": "Join Voice Channel",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [
+        { "Title": "Voice", "Image": "" }
+      ]
+    },
+    {
+      "UUID": "com.discord.streamdeck.text-channel",
+      "Name": "Go to Text Channel",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [
+        { "Title": "Text", "Image": "" }
+      ]
+    },
+    {
+      "UUID": "com.discord.streamdeck.video",
+      "Name": "Toggle Video",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [
+        { "Title": "Video", "Image": "" }
+      ]
+    },
+    {
+      "UUID": "com.discord.streamdeck.stream",
+      "Name": "Toggle Stream",
+      "PropertyInspectorPath": "ui/inspector.html",
+      "States": [
+        { "Title": "Stream", "Image": "" }
+      ]
+    }
+  ]
+}

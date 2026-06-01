@@ -41,3 +41,22 @@ Spotify/media via playerctl
 Volume control via pactl
 Clock / date display (dynamic buttons that update on a timer)
 CPU / RAM display
+
+Phase 6: OBS Functionality
+
+Record: Start or stop recording
+Record Pause: Pause an active recording
+Stream: Start or stop streaming
+Replay Buffer: Start or stop the replay buffer
+Save Replay: Save a replay of the active buffer
+Scene Collection: Switch to a scene collection
+Scene: Switch to a scene
+Source: Show or hide a source
+Mute: Mute or unmute source audio
+Media: Control playback for a media source
+Studio Mode: Turn Studio Mode on or off
+Preview Scene: Push your preview scene live when in Studio Mode
+Filter: Show or hide a source filter
+Screenshot: Take a screenshot of the output scene
+Transition: Switch the active scene transition
+Chapter Marker: Insert a chapter marker during an active recording

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Discord</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      background: #2b2d31;
+      color: #dbdee1;
+      padding: 12px;
+      min-height: 100vh;
+    }
+
+    h2 {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #949ba4;
+      margin-bottom: 8px;
+    }
+
+    .action-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+
+    .instruction {
+      background: #1e1f22;
+      border-left: 3px solid #5865f2;
+      border-radius: 0 4px 4px 0;
+      padding: 10px 12px;
+      color: #b5bac1;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+
+    .instruction strong {
+      color: #dbdee1;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #b5bac1;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      background: #1e1f22;
+      border: 1px solid #1e1f22;
+      border-radius: 3px;
+      color: #dbdee1;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus {
+      border-color: #5865f2;
+    }
+
+    .hint {
+      margin-top: 5px;
+      font-size: 11px;
+      color: #6d6f78;
+    }
+
+    .save-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    button {
+      background: #5865f2;
+      color: #ffffff;
+      border: none;
+      border-radius: 3px;
+      padding: 7px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button:hover { background: #4752c4; }
+    button:active { background: #3c45a5; }
+
+    .status {
+      font-size: 12px;
+      color: #23a55a;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .status.visible { opacity: 1; }
+    .status.error   { color: #f23f43; }
+
+    .warning {
+      background: #2c2012;
+      border: 1px solid #c28a1a;
+      border-radius: 4px;
+      padding: 8px 10px;
+      color: #f0b232;
+      font-size: 12px;
+      margin-top: 16px;
+      display: none;
+    }
+
+    .warning.visible { display: block; }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #2b2d31; }
+    ::-webkit-scrollbar-thumb { background: #3d3f45; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4a4c54; }
+
+    hr {
+      border: none;
+      border-top: 1px solid #3b3d42;
+      margin: 16px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="action-name" id="actionName">Discord</div>
+
+  <div class="instruction" id="instruction"></div>
+
+  <hr />
+
+  <label for="hotkeyInput">Hotkey</label>
+  <input
+    type="text"
+    id="hotkeyInput"
+    placeholder="e.g. ctrl+shift+m or F13"
+    autocomplete="off"
+    spellcheck="false"
+  />
+  <div class="hint">
+    Use lowercase key names with <code>+</code> as separator.<br />
+    Examples: <code>ctrl+shift+m</code> &nbsp; <code>F13</code> &nbsp; <code>super+alt+d</code>
+  </div>
+
+  <div class="save-row">
+    <button id="saveBtn">Save</button>
+    <span class="status" id="status"></span>
+  </div>
+
+  <div class="warning" id="xdotoolWarning">
+    <strong>xdotool not installed?</strong> Run <code>sudo apt install xdotool</code> first.
+  </div>
+
+  <script src="sdpi://host/bridge.js"></script>
+  <script>
+    'use strict'
+
+    const ACTION_INFO = {
+      'com.discord.streamdeck.mute': {
+        label: 'Mute / Unmute',
+        html: 'In Discord: <strong>Settings → Keybinds → Toggle Mute</strong>.<br/>Set a keybind there, then enter the same key combination below.',
+      },
+      'com.discord.streamdeck.deafen': {
+        label: 'Deafen / Undeafen',
+        html: 'In Discord: <strong>Settings → Keybinds → Toggle Deafen</strong>.<br/>Set a keybind there, then enter the same key combination below.',
+      },
+      'com.discord.streamdeck.ptt': {
+        label: 'Push to Talk',
+        html: 'In Discord: <strong>Settings → Voice & Video → Input Mode → Push to Talk</strong>.<br/>Set your PTT key there. The button holds the key down while pressed and releases it on release.',
+      },
+      'com.discord.streamdeck.ptm': {
+        label: 'Push to Mute',
+        html: 'In Discord: <strong>Settings → Keybinds → Push to Mute</strong>.<br/>Set a keybind there. The button holds the key down while pressed and releases it on release.',
+      },
+      'com.discord.streamdeck.voice-channel': {
+        label: 'Voice Channel',
+        html: 'Discord has no built-in keybind for specific voice channels. Create a system shortcut with <strong>AutoKey</strong> or similar that clicks your channel, then enter that hotkey below.',
+      },
+      'com.discord.streamdeck.text-channel': {
+        label: 'Text Channel',
+        html: 'Discord has no built-in keybind for specific text channels. Create a system shortcut with <strong>AutoKey</strong> or similar that navigates to your channel, then enter that hotkey below.',
+      },
+      'com.discord.streamdeck.video': {
+        label: 'Toggle Video',
+        html: 'In Discord: <strong>Settings → Keybinds → Toggle Video</strong>.<br/>Set a keybind there, then enter the same key combination below.',
+      },
+      'com.discord.streamdeck.stream': {
+        label: 'Toggle Stream',
+        html: 'In Discord: <strong>Settings → Keybinds → Start/Stop Screenshare</strong>.<br/>Set a keybind there, then enter the same key combination below.',
+      },
+    }
+
+    const hotkeyInput  = document.getElementById('hotkeyInput')
+    const saveBtn      = document.getElementById('saveBtn')
+    const statusEl     = document.getElementById('status')
+    const actionNameEl = document.getElementById('actionName')
+    const instructionEl = document.getElementById('instruction')
+
+    let statusTimer = null
+
+    function showStatus(msg, isError = false) {
+      clearTimeout(statusTimer)
+      statusEl.textContent = msg
+      statusEl.className = 'status visible' + (isError ? ' error' : '')
+      statusTimer = setTimeout(() => { statusEl.className = 'status' }, 2500)
+    }
+
+    function save() {
+      const hotkey = hotkeyInput.value.trim()
+      if (!hotkey) {
+        showStatus('Enter a hotkey first.', true)
+        return
+      }
+      sdpi.setSettings({ hotkey })
+      showStatus('Saved')
+    }
+
+    saveBtn.addEventListener('click', save)
+
+    hotkeyInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') save()
+    })
+
+    // Load current settings when the inspector opens
+    sdpi.getSettings(settings => {
+      const type = settings?.type || ''
+      const info = ACTION_INFO[type]
+
+      if (info) {
+        actionNameEl.textContent = info.label
+        instructionEl.innerHTML  = info.html
+      } else {
+        instructionEl.innerHTML = 'Configure a hotkey to match the corresponding Discord keybind.'
+      }
+
+      if (settings?.hotkey) {
+        hotkeyInput.value = settings.hotkey
+      }
+    })
+  </script>
+</body>
+</html>
