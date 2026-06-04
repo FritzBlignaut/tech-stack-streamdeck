@@ -87,7 +87,7 @@ OBS Studio and Discord support are distributed as separate `.sdPlugin` packages.
 | Plugin | Actions | Requires |
 |--------|---------|----------|
 | **OBS Studio** (`obs-plugin/`) | Toggle record, toggle stream, pause recording, replay buffer, switch scene, switch collection, source visibility, mute, media control, studio mode, filter toggle, screenshot, transition, chapter marker | OBS WebSocket |
-| **Discord** (`discord-plugin/`) | Push-to-Talk, Mute, Deafen | `xdotool` |
+| **Discord** (`discord-plugin/`) | Mute, Deafen, Push-to-Talk, Push-to-Mute, channel switching via Discord RPC | Discord desktop app + Discord developer app credentials |
 
 ---
 
@@ -129,7 +129,7 @@ OBS Studio and Discord support are distributed as separate `.sdPlugin` packages.
 > | Plugin | Extra setup required |
 > |--------|---------------------|
 > | **OBS Studio** | Open OBS → **Tools → WebSocket Server Settings** → enable the server (default port **4455**). The plugin auto-connects and retries every 5 s. |
-> | **Discord** | Ensure `xdotool` is installed (`sudo apt install xdotool`). Open Discord and configure your Push-to-Talk / Mute / Deafen keys there. |
+> | **Discord** | Open Discord desktop app. In the Property Inspector, provide your Discord Developer Application `client_id` and `client_secret`, authorize RPC access, then select channels where needed. |
 >
 > To uninstall a plugin, delete its folder from `~/.config/tech-stack-streamdeck/plugins/` and restart the app.
 
@@ -224,8 +224,10 @@ The Scene, Scene Collection, Source, Input, and Transition pickers in the Proper
 ### Discord plugin
 
 1. Install the plugin (see [Installing a plugin](#installing-a-plugin) above)
-2. Ensure `xdotool` is installed (`sudo apt install xdotool`)
-3. Open Discord and assign Push-to-Talk / Mute / Deafen to buttons
+2. Open Discord desktop app
+3. In the button's Property Inspector, enter Discord application `client_id` and `client_secret`
+4. Click **Authorize** and approve the Discord prompt
+5. For voice/text channel actions, pick a guild and channel from the inspector dropdowns
 
 ---
 
