@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Discord</title>
+  <title>Discord RPC</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -16,15 +16,6 @@
       min-height: 100vh;
     }
 
-    h2 {
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #949ba4;
-      margin-bottom: 8px;
-    }
-
     .action-name {
       font-size: 15px;
       font-weight: 600;
@@ -32,18 +23,27 @@
       margin-bottom: 12px;
     }
 
-    .instruction {
+    .panel {
       background: #1e1f22;
-      border-left: 3px solid #5865f2;
-      border-radius: 0 4px 4px 0;
-      padding: 10px 12px;
-      color: #b5bac1;
-      line-height: 1.5;
-      margin-bottom: 16px;
+      border: 1px solid #34363c;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 12px;
     }
 
-    .instruction strong {
-      color: #dbdee1;
+    .panel h3 {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #b5bac1;
+      margin-bottom: 8px;
+    }
+
+    .instruction {
+      line-height: 1.5;
+      color: #c6cad0;
+      margin-bottom: 10px;
     }
 
     label {
@@ -53,47 +53,46 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: #b5bac1;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }
 
-    input[type="text"] {
+    input[type="text"],
+    input[type="password"],
+    select {
       width: 100%;
-      background: #1e1f22;
-      border: 1px solid #1e1f22;
-      border-radius: 3px;
+      background: #141518;
+      border: 1px solid #141518;
+      border-radius: 4px;
       color: #dbdee1;
-      font-size: 14px;
-      font-family: 'Consolas', 'Monaco', monospace;
-      padding: 8px 10px;
+      font-size: 13px;
+      padding: 8px 9px;
       outline: none;
+      margin-bottom: 8px;
       transition: border-color 0.15s;
     }
 
-    input[type="text"]:focus {
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    select:focus {
       border-color: #5865f2;
     }
 
-    .hint {
-      margin-top: 5px;
-      font-size: 11px;
-      color: #6d6f78;
-    }
-
-    .save-row {
+    .row {
       display: flex;
+      gap: 8px;
       align-items: center;
-      gap: 10px;
-      margin-top: 12px;
+      margin-top: 4px;
+      flex-wrap: wrap;
     }
 
     button {
       background: #5865f2;
       color: #ffffff;
       border: none;
-      border-radius: 3px;
-      padding: 7px 16px;
-      font-size: 13px;
-      font-weight: 500;
+      border-radius: 4px;
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
       transition: background 0.15s;
     }
@@ -101,69 +100,79 @@
     button:hover { background: #4752c4; }
     button:active { background: #3c45a5; }
 
+    .btn-secondary {
+      background: #3a3d44;
+      color: #d0d4db;
+    }
+
+    .btn-secondary:hover { background: #484c56; }
+
     .status {
+      margin-top: 8px;
       font-size: 12px;
-      color: #23a55a;
-      opacity: 0;
-      transition: opacity 0.2s;
+      color: #8ca0ff;
     }
 
-    .status.visible { opacity: 1; }
-    .status.error   { color: #f23f43; }
+    .status.error { color: #f87171; }
+    .status.success { color: #34d399; }
 
-    .warning {
-      background: #2c2012;
-      border: 1px solid #c28a1a;
-      border-radius: 4px;
-      padding: 8px 10px;
-      color: #f0b232;
-      font-size: 12px;
-      margin-top: 16px;
-      display: none;
+    .hint {
+      font-size: 11px;
+      color: #8a8f98;
+      line-height: 1.45;
+      margin-top: 4px;
     }
 
-    .warning.visible { display: block; }
-
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: #2b2d31; }
-    ::-webkit-scrollbar-thumb { background: #3d3f45; border-radius: 2px; }
-    ::-webkit-scrollbar-thumb:hover { background: #4a4c54; }
-
-    hr {
-      border: none;
-      border-top: 1px solid #3b3d42;
-      margin: 16px 0;
-    }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
-
   <div class="action-name" id="actionName">Discord</div>
 
-  <div class="instruction" id="instruction"></div>
-
-  <hr />
-
-  <label for="hotkeyInput">Hotkey</label>
-  <input
-    type="text"
-    id="hotkeyInput"
-    placeholder="e.g. ctrl+shift+m or F13"
-    autocomplete="off"
-    spellcheck="false"
-  />
-  <div class="hint">
-    Use lowercase key names with <code>+</code> as separator.<br />
-    Examples: <code>ctrl+shift+m</code> &nbsp; <code>F13</code> &nbsp; <code>super+alt+d</code>
+  <div class="panel">
+    <h3>Action</h3>
+    <div class="instruction" id="instruction"></div>
   </div>
 
-  <div class="save-row">
-    <button id="saveBtn">Save</button>
-    <span class="status" id="status"></span>
+  <div class="panel">
+    <h3>Discord RPC Auth</h3>
+
+    <label for="clientId">Client ID</label>
+    <input type="text" id="clientId" placeholder="Discord application client ID" autocomplete="off" />
+
+    <label for="clientSecret">Client Secret</label>
+    <input type="password" id="clientSecret" placeholder="Discord application client secret" autocomplete="off" />
+
+    <label for="scopes">Scopes</label>
+    <input type="text" id="scopes" value="rpc identify" autocomplete="off" />
+
+    <div class="row">
+      <button id="saveBtn" class="btn-secondary">Save Settings</button>
+      <button id="authorizeBtn">Authorize</button>
+      <button id="refreshBtn" class="btn-secondary">Refresh</button>
+    </div>
+
+    <div class="hint">
+      Authorize opens Discord's permission prompt. This action stores tokens in your local profile so the plugin can call RPC commands.
+    </div>
+
+    <div class="status" id="status"></div>
   </div>
 
-  <div class="warning" id="xdotoolWarning">
-    <strong>xdotool not installed?</strong> Run <code>sudo apt install xdotool</code> first.
+  <div class="panel hidden" id="channelPanel">
+    <h3>Channel Selection</h3>
+
+    <label for="guildSelect">Guild</label>
+    <select id="guildSelect">
+      <option value="">Select a guild</option>
+    </select>
+
+    <label for="channelSelect">Channel</label>
+    <select id="channelSelect">
+      <option value="">Select a channel</option>
+    </select>
+
+    <div class="hint" id="channelHint"></div>
   </div>
 
   <script src="sdpi://host/bridge.js"></script>
@@ -173,84 +182,238 @@
     const ACTION_INFO = {
       'com.discord.streamdeck.mute': {
         label: 'Mute / Unmute',
-        html: 'In Discord: <strong>Settings → Keybinds → Toggle Mute</strong>.<br/>Set a keybind there, then enter the same key combination below.',
+        text: 'Toggles your Discord self-mute state via RPC.',
       },
       'com.discord.streamdeck.deafen': {
         label: 'Deafen / Undeafen',
-        html: 'In Discord: <strong>Settings → Keybinds → Toggle Deafen</strong>.<br/>Set a keybind there, then enter the same key combination below.',
+        text: 'Toggles your Discord self-deafen state via RPC.',
       },
       'com.discord.streamdeck.ptt': {
         label: 'Push to Talk',
-        html: 'In Discord: <strong>Settings → Voice & Video → Input Mode → Push to Talk</strong>.<br/>Set your PTT key there. The button holds the key down while pressed and releases it on release.',
+        text: 'Temporarily unmutes while the key is held.',
       },
       'com.discord.streamdeck.ptm': {
         label: 'Push to Mute',
-        html: 'In Discord: <strong>Settings → Keybinds → Push to Mute</strong>.<br/>Set a keybind there. The button holds the key down while pressed and releases it on release.',
+        text: 'Temporarily mutes while the key is held.',
       },
       'com.discord.streamdeck.voice-channel': {
-        label: 'Voice Channel',
-        html: 'Discord has no built-in keybind for specific voice channels. Create a system shortcut with <strong>AutoKey</strong> or similar that clicks your channel, then enter that hotkey below.',
+        label: 'Join Voice Channel',
+        text: 'Select a guild and voice channel below.',
       },
       'com.discord.streamdeck.text-channel': {
-        label: 'Text Channel',
-        html: 'Discord has no built-in keybind for specific text channels. Create a system shortcut with <strong>AutoKey</strong> or similar that navigates to your channel, then enter that hotkey below.',
+        label: 'Go to Text Channel',
+        text: 'Select a guild and text channel below.',
       },
       'com.discord.streamdeck.video': {
         label: 'Toggle Video',
-        html: 'In Discord: <strong>Settings → Keybinds → Toggle Video</strong>.<br/>Set a keybind there, then enter the same key combination below.',
+        text: 'This action is currently limited by Discord RPC command support in this plugin.',
       },
       'com.discord.streamdeck.stream': {
         label: 'Toggle Stream',
-        html: 'In Discord: <strong>Settings → Keybinds → Start/Stop Screenshare</strong>.<br/>Set a keybind there, then enter the same key combination below.',
+        text: 'This action is currently limited by Discord RPC command support in this plugin.',
       },
     }
 
-    const hotkeyInput  = document.getElementById('hotkeyInput')
-    const saveBtn      = document.getElementById('saveBtn')
-    const statusEl     = document.getElementById('status')
-    const actionNameEl = document.getElementById('actionName')
-    const instructionEl = document.getElementById('instruction')
-
-    let statusTimer = null
-
-    function showStatus(msg, isError = false) {
-      clearTimeout(statusTimer)
-      statusEl.textContent = msg
-      statusEl.className = 'status visible' + (isError ? ' error' : '')
-      statusTimer = setTimeout(() => { statusEl.className = 'status' }, 2500)
+    const el = {
+      actionName: document.getElementById('actionName'),
+      instruction: document.getElementById('instruction'),
+      status: document.getElementById('status'),
+      clientId: document.getElementById('clientId'),
+      clientSecret: document.getElementById('clientSecret'),
+      scopes: document.getElementById('scopes'),
+      saveBtn: document.getElementById('saveBtn'),
+      authorizeBtn: document.getElementById('authorizeBtn'),
+      refreshBtn: document.getElementById('refreshBtn'),
+      channelPanel: document.getElementById('channelPanel'),
+      guildSelect: document.getElementById('guildSelect'),
+      channelSelect: document.getElementById('channelSelect'),
+      channelHint: document.getElementById('channelHint'),
     }
 
-    function save() {
-      const hotkey = hotkeyInput.value.trim()
-      if (!hotkey) {
-        showStatus('Enter a hotkey first.', true)
-        return
+    let settings = {}
+    let currentActionType = ''
+
+    function isVoiceAction() {
+      return currentActionType === 'com.discord.streamdeck.voice-channel'
+    }
+
+    function isTextAction() {
+      return currentActionType === 'com.discord.streamdeck.text-channel'
+    }
+
+    function channelTypeAllowed(type) {
+      if (isVoiceAction()) return Number(type) === 2
+      if (isTextAction()) return Number(type) === 0 || Number(type) === 1 || Number(type) === 3
+      return false
+    }
+
+    function setStatus(message, kind) {
+      el.status.textContent = message || ''
+      el.status.className = 'status'
+      if (kind === 'error') el.status.classList.add('error')
+      if (kind === 'success') el.status.classList.add('success')
+    }
+
+    function persist(patch) {
+      settings = { ...settings, ...patch }
+      sdpi.setSettings(settings)
+    }
+
+    function syncFormFromSettings() {
+      el.clientId.value = settings.clientId || ''
+      el.clientSecret.value = settings.clientSecret || ''
+      el.scopes.value = settings.scopes || 'rpc identify'
+    }
+
+    function renderActionInfo() {
+      const info = ACTION_INFO[currentActionType]
+      if (info) {
+        el.actionName.textContent = info.label
+        el.instruction.textContent = info.text
+      } else {
+        el.actionName.textContent = 'Discord'
+        el.instruction.textContent = 'Configure Discord RPC settings.'
       }
-      sdpi.setSettings({ hotkey })
-      showStatus('Saved')
+
+      const showChannels = isVoiceAction() || isTextAction()
+      el.channelPanel.classList.toggle('hidden', !showChannels)
+      if (isVoiceAction()) {
+        el.channelHint.textContent = 'Only voice channels are listed.'
+      } else if (isTextAction()) {
+        el.channelHint.textContent = 'Only text/DM channels are listed.'
+      } else {
+        el.channelHint.textContent = ''
+      }
     }
 
-    saveBtn.addEventListener('click', save)
+    function sendPlugin(cmd, payload = {}) {
+      sdpi.sendToPlugin({
+        $cmd: cmd,
+        settings: { ...settings, ...payload },
+      })
+    }
 
-    hotkeyInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') save()
+    function populateGuilds(guilds) {
+      const previous = settings.guildId || ''
+      el.guildSelect.innerHTML = '<option value="">Select a guild</option>'
+
+      guilds.forEach(g => {
+        const opt = document.createElement('option')
+        opt.value = String(g.id)
+        opt.textContent = g.name || g.id
+        el.guildSelect.appendChild(opt)
+      })
+
+      if (previous) el.guildSelect.value = previous
+    }
+
+    function populateChannels(channels) {
+      const previous = settings.channelId || ''
+      el.channelSelect.innerHTML = '<option value="">Select a channel</option>'
+
+      channels
+        .filter(ch => channelTypeAllowed(ch.type))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+        .forEach(ch => {
+          const opt = document.createElement('option')
+          opt.value = String(ch.id)
+          opt.textContent = ch.name || ch.id
+          el.channelSelect.appendChild(opt)
+        })
+
+      if (previous) el.channelSelect.value = previous
+    }
+
+    function requestStatusAndLists() {
+      sendPlugin('rpc-status')
+      if (isVoiceAction() || isTextAction()) {
+        sendPlugin('rpc-refresh')
+      }
+    }
+
+    el.saveBtn.addEventListener('click', () => {
+      persist({
+        clientId: el.clientId.value.trim(),
+        clientSecret: el.clientSecret.value.trim(),
+        scopes: el.scopes.value.trim() || 'rpc identify',
+      })
+      setStatus('Saved settings', 'success')
     })
 
-    // Load current settings when the inspector opens
-    sdpi.getSettings(settings => {
-      const type = settings?.type || ''
-      const info = ACTION_INFO[type]
+    el.authorizeBtn.addEventListener('click', () => {
+      persist({
+        clientId: el.clientId.value.trim(),
+        clientSecret: el.clientSecret.value.trim(),
+        scopes: el.scopes.value.trim() || 'rpc identify',
+      })
+      setStatus('Authorizing via Discord...', null)
+      sendPlugin('rpc-authorize')
+    })
 
-      if (info) {
-        actionNameEl.textContent = info.label
-        instructionEl.innerHTML  = info.html
-      } else {
-        instructionEl.innerHTML = 'Configure a hotkey to match the corresponding Discord keybind.'
+    el.refreshBtn.addEventListener('click', () => {
+      persist({
+        clientId: el.clientId.value.trim(),
+        clientSecret: el.clientSecret.value.trim(),
+        scopes: el.scopes.value.trim() || 'rpc identify',
+      })
+      setStatus('Refreshing Discord data...', null)
+      requestStatusAndLists()
+    })
+
+    el.guildSelect.addEventListener('change', () => {
+      persist({ guildId: el.guildSelect.value, channelId: '' })
+      sendPlugin('rpc-load-channels')
+    })
+
+    el.channelSelect.addEventListener('change', () => {
+      persist({ channelId: el.channelSelect.value })
+      setStatus('Channel saved', 'success')
+    })
+
+    sdpi.onSendToPropertyInspector(payload => {
+      if (!payload || typeof payload !== 'object') return
+
+      if (payload.type === 'error') {
+        setStatus(payload.message || 'Discord RPC error', 'error')
+        return
       }
 
-      if (settings?.hotkey) {
-        hotkeyInput.value = settings.hotkey
+      if (payload.type === 'status') {
+        if (payload.authenticated) {
+          setStatus('Connected and authenticated', 'success')
+        } else if (payload.connected) {
+          setStatus('Connected. Authorize to use commands.', null)
+        } else {
+          setStatus('Disconnected from Discord', 'error')
+        }
+        return
       }
+
+      if (payload.type === 'patchSettings') {
+        persist(payload.patch || {})
+        syncFormFromSettings()
+        return
+      }
+
+      if (payload.type === 'guilds') {
+        populateGuilds(Array.isArray(payload.guilds) ? payload.guilds : [])
+        return
+      }
+
+      if (payload.type === 'channels') {
+        if (!payload.guildId || payload.guildId === settings.guildId) {
+          populateChannels(Array.isArray(payload.channels) ? payload.channels : [])
+        }
+      }
+    })
+
+    sdpi.getSettings(current => {
+      settings = current || {}
+      currentActionType = settings.type || ''
+
+      renderActionInfo()
+      syncFormFromSettings()
+      requestStatusAndLists()
     })
   </script>
 </body>

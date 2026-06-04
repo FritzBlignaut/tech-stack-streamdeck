@@ -1793,8 +1793,6 @@ export default function App() {
   const [appVersion,           setAppVersion]           = useState('')
   const [pluginManifests,      setPluginManifests]      = useState([])    // installed .sdPlugin manifests
   const [showPluginBrowser,    setShowPluginBrowser]    = useState(false) // plugin browser modal
-  const [stressActive,         setStressActive]         = useState(false) // Discord mute stress test
-  const [stressCount,          setStressCount]          = useState(0)
 
   // Fetch app version once on mount
   useEffect(() => {
@@ -1810,7 +1808,6 @@ export default function App() {
   const currentPageRef   = useRef(0)
   const folderPathRef    = useRef([])
   const deviceRef         = useRef(null)
-  const stressIntervalRef = useRef(null)
   useEffect(() => { buttonConfigsRef.current = buttonConfigs },          [buttonConfigs])
   useEffect(() => { pagesRef.current = pages },                          [pages])
   useEffect(() => { currentPageRef.current = currentPage },              [currentPage])
@@ -2526,7 +2523,7 @@ export default function App() {
       sleepingRef.current = false
       setSleeping(false)
     })
-    return () => { offInfo(); offDown(); offUp(); offSleep(); offWake(); offDisconnect?.(); clearInterval(stressIntervalRef.current) }
+    return () => { offInfo(); offDown(); offUp(); offSleep(); offWake(); offDisconnect?.() }
   }, [])
 
   // When waking, re-draw every hardware button with the stored config.
@@ -2554,44 +2551,6 @@ export default function App() {
     : 'No device'
 
   const handleSelect = i => setSelectedKey(prev => prev === i ? null : i)
-
-  function toggleStress() {
-    if (stressActive) {
-      clearInterval(stressIntervalRef.current)
-      stressIntervalRef.current = null
-      setStressActive(false)
-      setStressCount(0)
-    } else {
-      // Find the first Discord non-PTT/PTM action across all pages
-      let discordAction = null
-      outer: for (const page of pagesRef.current) {
-        for (const cfg of Object.values(page)) {
-          if (
-            cfg?.action?.pluginUUID === 'com.discord.streamdeck' &&
-            cfg.action.type &&
-            !cfg.action.type.endsWith('.ptt') &&
-            !cfg.action.type.endsWith('.ptm')
-          ) {
-            discordAction = cfg.action
-            break outer
-          }
-        }
-      }
-      if (!discordAction) {
-        alert('No Discord mute/unmute button configured. Add a Discord action to a button first.')
-        return
-      }
-      setStressActive(true)
-      let count = 0
-      setStressCount(0)
-      stressIntervalRef.current = setInterval(() => {
-        count++
-        setStressCount(count)
-        const ctx = JSON.stringify({ stressTest: true, tick: count })
-        window.streamDeck?.sendToPlugin?.(discordAction.pluginUUID, discordAction.type, 'keyDown', { ...discordAction }, ctx)
-      }, 5000)
-    }
-  }
 
   return (
     <div className="app">
@@ -2639,25 +2598,6 @@ export default function App() {
             <span>{deviceName}</span>
             <span className={`device-status-dot${device ? ' connected' : ''}`} />
           </span>
-
-          <button
-            className={`icon-btn${stressActive ? ' stress-btn-active' : ''}`}
-            title={stressActive ? `Stress test active — ${stressCount} fire${stressCount === 1 ? '' : 's'}. Click to stop.` : 'Stress test: fire Discord mute/unmute every 5s'}
-            onClick={toggleStress}
-          >
-            {stressActive ? (
-              <>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">
-                  <rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" stroke="none" />
-                </svg>
-                <span className="stress-count">{stressCount}</span>
-              </>
-            ) : (
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">
-                <polyline points="1,8 4,4 7,12 10,6 13,9 16,7" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </button>
 
           <button className="icon-btn" title="Plugins" onClick={() => setShowPluginBrowser(true)}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" width="16" height="16">

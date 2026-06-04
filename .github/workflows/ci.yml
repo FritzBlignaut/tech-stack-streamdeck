@@ -55,7 +55,7 @@ jobs:
       #   main    → increment RELEASE (1st digit), reset BETA/ALPHA/BUILD to 0, tag release/X.0.0.0
       - name: Bump version
         id: bump
-        if: github.event_name == 'push' && github.ref_name != 'uat'
+        if: github.event_name == 'push' && github.ref_name != 'uat' && github.actor != 'dependabot[bot]'
         run: |
           # Read the 4-part display version from extraMetadata
           EXT_VERSION=$(node -p "require('./package.json').build.extraMetadata.version")
@@ -105,7 +105,7 @@ jobs:
       # Push the version bump commit AFTER tests pass so a failed test doesn't
       # advance the version counter.
       - name: Commit and push version bump
-        if: github.event_name == 'push' && github.ref_name != 'uat' && steps.bump.outputs.new-version != ''
+        if: github.event_name == 'push' && github.ref_name != 'uat' && github.actor != 'dependabot[bot]' && steps.bump.outputs.new-version != ''
         run: |
           NEW_VERSION="${{ steps.bump.outputs.new-version }}"
           git config user.name  "github-actions[bot]"
@@ -117,7 +117,7 @@ jobs:
 
       # On main: create a release tag after the version bump commit is pushed.
       - name: Tag release
-        if: github.event_name == 'push' && github.ref_name == 'main' && steps.bump.outputs.new-version != ''
+        if: github.event_name == 'push' && github.ref_name == 'main' && github.actor != 'dependabot[bot]' && steps.bump.outputs.new-version != ''
         run: |
           TAG="release/${{ steps.bump.outputs.new-version }}"
           git tag "$TAG"
