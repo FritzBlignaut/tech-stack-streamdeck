@@ -259,9 +259,37 @@ If you want the app to start automatically when you log in:
 
 ---
 
+## Discord Plugin Hosted Relay Setup (Recommended)
+
+If you use the Discord plugin, configure a hosted OAuth relay to keep the Discord `client_secret` and refresh tokens off the local machine.
+
+1. Open a terminal in the project folder:
+
+```bash
+cd discord-relay
+wrangler login
+wrangler kv namespace create DISCORD_SESSIONS
+wrangler kv namespace create DISCORD_SESSIONS --preview
+# copy generated KV IDs into discord-relay/wrangler.toml
+wrangler secret put DISCORD_CLIENT_SECRET
+wrangler secret put RELAY_API_KEY
+wrangler deploy
+```
+
+2. Install the Discord plugin as usual into `~/.config/tech-stack-streamdeck/plugins/`.
+3. In the Discord action inspector, set:
+   - `Client ID` — your Discord application client ID
+   - `Relay URL` — your deployed Worker URL
+   - `Relay API Key` — your relay key if enabled
+4. Click **Authorize** and accept the Discord prompt.
+
+In hosted mode, local plugin settings will not keep `client_secret` or `refresh_token`.
+
+---
+
 ## Next Steps
 
-- **Install plugins** (OBS Studio, Discord Push-to-Talk) — see the separate Plugin Installation Guide *(coming soon)*
+- **Install plugins** (OBS Studio, Discord) — see the Plugin Installation Guide in the README
 - **Create profiles** — use the profile switcher at the top of the app to create named layouts for different workflows
 - **Icon Library** — assign images to your buttons by pointing the app at a local folder of `.png` / `.gif` files via the button editor panel
 
