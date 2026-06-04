@@ -56,7 +56,6 @@ jobs:
       actions: write   # required to list and delete artifacts
 
     steps:
-      # Checkout the branch tip (picks up the version bump commit from the test job)
       - name: Checkout
         uses: actions/checkout@v6
         with:
