@@ -328,7 +328,7 @@ process.on('message', (msg) => {
   // keyUp has no OBS actions that require hold-release, so nothing to do
 
   if (msg.event === 'sendToPlugin') {
-    handleSendToPlugin(msg.actionUUID || '', msg.payload || {})
+    handleSendToPlugin(msg.actionUUID || '', msg.settings || {})
   }
 })
 

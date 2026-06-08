@@ -5,7 +5,7 @@
     "email": "fritz.blignaut@gmail.com"
   },
   "private": true,
-  "version": "0.0.2",
+  "version": "1.0.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -20,13 +20,15 @@
     "electron:build": "vite build && electron-builder --linux",
     "package:local": "npm run build && npx electron-builder --linux dir --publish=never",
     "test:local": "npm run package:local && ./dist-electron/linux-unpacked/tech-stack-streamdeck",
-    "test:stress": "npm run package:local && SLEEP_STRESS=1 ./dist-electron/linux-unpacked/tech-stack-streamdeck"
+    "test:stress": "npm run package:local && SLEEP_STRESS=1 ./dist-electron/linux-unpacked/tech-stack-streamdeck",
+    "discord-relay:local": "node discord-relay/local-server.mjs",
+    "discord-relay:local:setup": "bash discord-relay/start-local.sh"
   },
   "build": {
     "appId": "com.techstack.streamdeck",
     "productName": "Tech Stack Stream Deck",
     "extraMetadata": {
-      "version": "0.0.2.0"
+      "version": "1.0.0.0"
     },
     "directories": {
       "output": "dist-electron"
@@ -62,29 +64,29 @@
     }
   },
   "dependencies": {
-    "@elgato-stream-deck/node": "^7.6.2",
+    "@elgato-stream-deck/node": "^7.6.3",
     "electron-store": "^11.0.2",
     "gifuct-js": "^2.1.2",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
-    "electron": "^42.2.0",
+    "electron": "^42.3.3",
     "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/react": "^19.2.15",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "electron-builder": "^26.8.1",
-    "eslint": "^10.3.0",
+    "electron-builder": "^26.15.2",
+    "eslint": "^10.4.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
-    "vite": "^8.0.14",
-    "vitest": "^4.1.7"
+    "vite": "^8.0.16",
+    "vitest": "^4.1.8"
   },
   "overrides": {
     "node-hid": {
