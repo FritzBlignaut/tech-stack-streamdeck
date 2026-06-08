@@ -5,7 +5,7 @@
     "email": "fritz.blignaut@gmail.com"
   },
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -26,7 +26,7 @@
     "appId": "com.techstack.streamdeck",
     "productName": "Tech Stack Stream Deck",
     "extraMetadata": {
-      "version": "1.0.0.0"
+      "version": "2.0.0.0"
     },
     "directories": {
       "output": "dist-electron"
