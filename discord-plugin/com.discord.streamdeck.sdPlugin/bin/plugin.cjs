@@ -1,152 +1,341 @@
-/**
- * com.discord.streamdeck — plugin.cjs
- *
- * Runs as a child process forked by the host app.
- * Controls Discord via xdotool keyboard shortcuts.
- *
- * Each button stores a `hotkey` in its settings (e.g. "ctrl+shift+m").
- * On keyDown the plugin fires `xdotool key <hotkey>`.
- * Push-to-Talk and Push-to-Mute use `xdotool keydown` / `xdotool keyup`
- * so the key is held for the duration of the button press.
- *
- * Requirements: xdotool must be installed (sudo apt install xdotool).
- */
-
 'use strict'
 
-const { spawnSync, execFileSync } = require('child_process')
+const {
+  DiscordRpcClient,
+  exchangeAuthCode,
+  refreshAccessToken,
+  splitScopes,
+} = require('./discord-rpc.cjs')
 
 const pluginUUID = process.env.PLUGIN_UUID || 'com.discord.streamdeck'
 
-// Actions that use hold-and-release rather than a single tap
-const HOLD_ACTIONS = new Set([
-  'com.discord.streamdeck.ptt',
-  'com.discord.streamdeck.ptm',
-])
+const ACTION_PTT = 'com.discord.streamdeck.ptt'
+const ACTION_PTM = 'com.discord.streamdeck.ptm'
 
-// Verify xdotool is available at startup
-let xdotoolAvailable = false
-try {
-  execFileSync('which', ['xdotool'], { stdio: 'ignore' })
-  xdotoolAvailable = true
-  console.log(`[${pluginUUID}] xdotool found — ready`)
-} catch {
-  console.warn(`[${pluginUUID}] WARNING: xdotool not found. Install it with: sudo apt install xdotool`)
+const HOLD_ACTIONS = new Set([ACTION_PTT, ACTION_PTM])
+const DEFAULT_DISCORD_REDIRECT_URI = 'http://127.0.0.1'
+
+const rpc = new DiscordRpcClient({ logger: console })
+
+const holdState = new Map()
+
+function log(msg, ...rest) {
+  console.log(`[${pluginUUID}] ${msg}`, ...rest)
 }
 
-/**
- * Find Discord's X11 window ID.
- * Returns the window ID string, or null if Discord is not running / not found.
- */
-function getDiscordWindowId() {
-  // Try by window class first (most reliable)
-  const byClass = spawnSync('xdotool', ['search', '--class', 'discord'], { stdio: 'pipe' })
-  if (byClass.status === 0) {
-    const ids = byClass.stdout.toString().trim().split('\n').filter(Boolean)
-    if (ids.length > 0) return ids[ids.length - 1]
-  }
-  // Fallback: search by window title
-  const byName = spawnSync('xdotool', ['search', '--name', 'Discord'], { stdio: 'pipe' })
-  if (byName.status === 0) {
-    const ids = byName.stdout.toString().trim().split('\n').filter(Boolean)
-    if (ids.length > 0) return ids[ids.length - 1]
-  }
-  console.warn(`[${pluginUUID}] Could not find Discord window — sending key to focused window instead`)
-  return null
+function sendToInspector(actionUUID, payload) {
+  if (!process.send || !actionUUID) return
+  process.send({ event: 'sendToPropertyInspector', actionUUID, payload })
 }
 
-/**
- * Focus `winId`, run `action()`, then restore focus to the previously active
- * window.  Uses XTestFakeKeyEvent (not XSendEvent) so Electron/Chromium treats
- * the event as a trusted hardware input (isTrusted=true in JavaScript).
- * xdotool key --window uses XSendEvent which Discord ignores.
- */
-function withDiscordFocus(winId, action) {
-  const prevResult = spawnSync('xdotool', ['getactivewindow'], { stdio: 'pipe' })
-  const prevWinId  = prevResult.status === 0 ? prevResult.stdout.toString().trim() : null
-
-  spawnSync('xdotool', ['windowfocus', '--sync', winId], { stdio: 'pipe' })
-  action()
-  if (prevWinId && prevWinId !== winId) {
-    spawnSync('xdotool', ['windowfocus', '--sync', prevWinId], { stdio: 'pipe' })
+function sanitizeSettings(settings = {}) {
+  return {
+    clientId: String(settings.clientId || '').trim(),
+    clientSecret: String(settings.clientSecret || '').trim(),
+    relayUrl: String(settings.relayUrl || '').trim(),
+    relayApiKey: String(settings.relayApiKey || '').trim(),
+    relaySessionId: String(settings.relaySessionId || '').trim(),
+    redirectUri: String(settings.redirectUri || DEFAULT_DISCORD_REDIRECT_URI).trim(),
+    accessToken: String(settings.accessToken || '').trim(),
+    refreshToken: String(settings.refreshToken || '').trim(),
+    expiresAt: Number(settings.expiresAt || 0),
+    scopes: splitScopes(settings.scopes),
+    guildId: String(settings.guildId || '').trim(),
+    channelId: String(settings.channelId || '').trim(),
+    forceMove: Boolean(settings.forceMove),
   }
 }
 
-function xdotoolKey(hotkey) {
-  if (!xdotoolAvailable) return
-  const winId = getDiscordWindowId()
-  const args  = ['key', '--clearmodifiers', hotkey]
-  console.log(`[${pluginUUID}] xdotool${winId ? ' (via Discord focus)' : ''} ${args.join(' ')}`)
-  if (winId) {
-    withDiscordFocus(winId, () => {
-      const r = spawnSync('xdotool', args, { stdio: 'pipe' })
-      if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool key failed:`, r.stderr?.toString().trim())
+async function ensureConnection(settings) {
+  const s = sanitizeSettings(settings)
+  await rpc.ensureConnected(s.clientId)
+  return s
+}
+
+async function ensureAuthenticated(actionUUID, settings) {
+  const s = await ensureConnection(settings)
+
+  if (s.accessToken && s.expiresAt > Date.now() + 30_000) {
+    await rpc.authenticate(s.accessToken)
+    return s
+  }
+
+  if (s.refreshToken) {
+    const refreshed = await refreshAccessToken({
+      clientId: s.clientId,
+      clientSecret: s.clientSecret,
+      refreshToken: s.refreshToken,
+      relayUrl: s.relayUrl,
+      relayApiKey: s.relayApiKey,
+      relaySessionId: s.relaySessionId,
     })
-  } else {
-    const r = spawnSync('xdotool', args, { stdio: 'pipe' })
-    if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool key failed:`, r.stderr?.toString().trim())
-  }
-}
 
-function xdotoolKeyDown(hotkey) {
-  if (!xdotoolAvailable) return
-  const winId = getDiscordWindowId()
-  const args  = ['keydown', '--clearmodifiers', hotkey]
-  console.log(`[${pluginUUID}] xdotool${winId ? ' (via Discord focus)' : ''} ${args.join(' ')}`)
-  if (winId) {
-    withDiscordFocus(winId, () => {
-      const r = spawnSync('xdotool', args, { stdio: 'pipe' })
-      if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool keydown failed:`, r.stderr?.toString().trim())
+    await rpc.authenticate(refreshed.accessToken)
+
+    const patch = {
+      accessToken: refreshed.accessToken,
+      expiresAt: refreshed.expiresAt,
+      scope: refreshed.scope,
+      tokenType: refreshed.tokenType,
+    }
+    if (refreshed.refreshToken) patch.refreshToken = refreshed.refreshToken
+    if (refreshed.sessionId) patch.relaySessionId = refreshed.sessionId
+    if (s.relayUrl) { patch.clientSecret = ''; patch.refreshToken = '' }
+
+    sendToInspector(actionUUID, { type: 'patchSettings', patch })
+    return { ...s, ...refreshed }
+  }
+
+  if (s.relayUrl && s.relaySessionId) {
+    const refreshed = await refreshAccessToken({
+      clientId: s.clientId,
+      relayUrl: s.relayUrl,
+      relayApiKey: s.relayApiKey,
+      relaySessionId: s.relaySessionId,
     })
-  } else {
-    const r = spawnSync('xdotool', args, { stdio: 'pipe' })
-    if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool keydown failed:`, r.stderr?.toString().trim())
-  }
-}
 
-function xdotoolKeyUp(hotkey) {
-  if (!xdotoolAvailable) return
-  const winId = getDiscordWindowId()
-  const args  = ['keyup', '--clearmodifiers', hotkey]
-  console.log(`[${pluginUUID}] xdotool${winId ? ' (via Discord focus)' : ''} ${args.join(' ')}`)
-  if (winId) {
-    withDiscordFocus(winId, () => {
-      const r = spawnSync('xdotool', args, { stdio: 'pipe' })
-      if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool keyup failed:`, r.stderr?.toString().trim())
+    await rpc.authenticate(refreshed.accessToken)
+
+    sendToInspector(actionUUID, {
+      type: 'patchSettings',
+      patch: {
+        accessToken: refreshed.accessToken,
+        expiresAt: refreshed.expiresAt,
+        scope: refreshed.scope,
+        tokenType: refreshed.tokenType,
+        relaySessionId: refreshed.sessionId || s.relaySessionId,
+        clientSecret: '',
+        refreshToken: '',
+      },
     })
-  } else {
-    const r = spawnSync('xdotool', args, { stdio: 'pipe' })
-    if (r.status !== 0) console.warn(`[${pluginUUID}] xdotool keyup failed:`, r.stderr?.toString().trim())
+
+    return { ...s, ...refreshed }
+  }
+
+  throw new Error('Not authorized. Use the Discord inspector to authorize this action first.')
+}
+
+async function toggleMute() {
+  const voice = await rpc.getVoiceSettings()
+  await rpc.setVoiceSettings({ mute: !Boolean(voice.mute) })
+}
+
+async function toggleDeafen() {
+  const voice = await rpc.getVoiceSettings()
+  await rpc.setVoiceSettings({ deaf: !Boolean(voice.deaf) })
+}
+
+async function handleHold(actionUUID, event, context) {
+  if (!context) return
+
+  if (event === 'keyDown') {
+    const voice = await rpc.getVoiceSettings()
+    holdState.set(context, { mute: Boolean(voice.mute), deaf: Boolean(voice.deaf) })
+
+    if (actionUUID === ACTION_PTT) {
+      await rpc.setVoiceSettings({ mute: false })
+    } else if (actionUUID === ACTION_PTM) {
+      await rpc.setVoiceSettings({ mute: true })
+    }
+    return
+  }
+
+  if (event === 'keyUp') {
+    const prev = holdState.get(context)
+    holdState.delete(context)
+
+    if (actionUUID === ACTION_PTT) {
+      await rpc.setVoiceSettings({ mute: prev ? prev.mute : true })
+    } else if (actionUUID === ACTION_PTM) {
+      await rpc.setVoiceSettings({ mute: prev ? prev.mute : false })
+    }
   }
 }
 
-process.on('message', (msg) => {
-  if (!msg?.event) return
+async function handleChannelAction(actionUUID, settings) {
+  const s = sanitizeSettings(settings)
+  if (!s.channelId) {
+    throw new Error('No channel selected. Open the Discord inspector and choose a channel first.')
+  }
 
-  const hotkey     = msg.settings?.hotkey
+  if (actionUUID === 'com.discord.streamdeck.voice-channel') {
+    await rpc.selectVoiceChannel(s.channelId)
+    return
+  }
+
+  if (actionUUID === 'com.discord.streamdeck.text-channel') {
+    await rpc.selectTextChannel(s.channelId)
+    return
+  }
+}
+
+function unsupportedActionError(actionUUID) {
+  if (actionUUID === 'com.discord.streamdeck.video') {
+    return 'Discord RPC does not expose a stable video-toggle command for this plugin. Action is currently unsupported in RPC mode.'
+  }
+  if (actionUUID === 'com.discord.streamdeck.stream') {
+    return 'Discord RPC does not expose a stable stream-toggle command for this plugin. Action is currently unsupported in RPC mode.'
+  }
+  return 'Unsupported Discord action.'
+}
+
+async function handleKeyEvent(msg) {
   const actionUUID = msg.actionUUID || ''
+  const event = msg.event || 'keyDown'
+  const settings = msg.settings || {}
+  const context = msg.context || ''
 
-  if (msg.event === 'keyDown') {
-    if (!hotkey) {
-      console.warn(`[${pluginUUID}] keyDown on ${actionUUID} — no hotkey configured`)
+  if (!actionUUID) return
+
+  try {
+    await ensureAuthenticated(actionUUID, settings)
+
+    if (HOLD_ACTIONS.has(actionUUID)) {
+      await handleHold(actionUUID, event, context)
       return
     }
-    console.log(`[${pluginUUID}] keyDown ${actionUUID} → ${HOLD_ACTIONS.has(actionUUID) ? 'keydown' : 'key'} "${hotkey}"`)
-    if (HOLD_ACTIONS.has(actionUUID)) {
-      xdotoolKeyDown(hotkey)
-    } else {
-      xdotoolKey(hotkey)
+
+    if (event !== 'keyDown') return
+
+    switch (actionUUID) {
+      case 'com.discord.streamdeck.mute':
+        await toggleMute()
+        return
+      case 'com.discord.streamdeck.deafen':
+        await toggleDeafen()
+        return
+      case 'com.discord.streamdeck.voice-channel':
+      case 'com.discord.streamdeck.text-channel':
+        await handleChannelAction(actionUUID, settings)
+        return
+      case 'com.discord.streamdeck.video':
+      case 'com.discord.streamdeck.stream':
+        throw new Error(unsupportedActionError(actionUUID))
+      default:
+        return
     }
+  } catch (err) {
+    const message = err?.message || String(err)
+    console.warn(`[${pluginUUID}] ${actionUUID} failed: ${message}`)
+    sendToInspector(actionUUID, { type: 'error', message })
+  }
+}
+
+async function handleInspectorMessage(actionUUID, payload) {
+  const cmd = payload?.$cmd || ''
+  const settings = payload?.settings || payload || {}
+
+  try {
+    if (cmd === 'rpc-status') {
+      const s = sanitizeSettings(settings)
+      await rpc.ensureConnected(s.clientId)
+
+      let authed = false
+      if (s.accessToken) {
+        try {
+          await rpc.authenticate(s.accessToken)
+          authed = true
+        } catch {
+          authed = false
+        }
+      }
+
+      sendToInspector(actionUUID, {
+        type: 'status',
+        connected: true,
+        ready: rpc.getState().ready,
+        authenticated: authed,
+      })
+      return
+    }
+
+    if (cmd === 'rpc-authorize') {
+      const s = await ensureConnection(settings)
+      const auth = await rpc.authorize({ clientId: s.clientId, scopes: s.scopes })
+      const token = await exchangeAuthCode({
+        clientId: s.clientId,
+        clientSecret: s.clientSecret,
+        code: auth.code,
+        relayUrl: s.relayUrl,
+        relayApiKey: s.relayApiKey,
+        relaySessionId: s.relaySessionId,
+        redirectUri: s.redirectUri,
+      })
+      await rpc.authenticate(token.accessToken)
+
+      const patch = {
+        accessToken: token.accessToken,
+        expiresAt: token.expiresAt,
+        scope: token.scope,
+        tokenType: token.tokenType,
+      }
+      if (token.refreshToken) patch.refreshToken = token.refreshToken
+      if (token.sessionId) patch.relaySessionId = token.sessionId
+      if (s.relayUrl) { patch.clientSecret = ''; patch.refreshToken = '' }
+
+      sendToInspector(actionUUID, { type: 'patchSettings', patch })
+
+      sendToInspector(actionUUID, {
+        type: 'status',
+        connected: true,
+        ready: rpc.getState().ready,
+        authenticated: true,
+      })
+      return
+    }
+
+    if (cmd === 'rpc-refresh') {
+      const authedSettings = await ensureAuthenticated(actionUUID, settings)
+      const guilds = await rpc.getGuilds()
+
+      sendToInspector(actionUUID, {
+        type: 'guilds',
+        guilds,
+      })
+
+      if (authedSettings.guildId) {
+        const channels = await rpc.getChannels(authedSettings.guildId)
+        sendToInspector(actionUUID, {
+          type: 'channels',
+          guildId: authedSettings.guildId,
+          channels,
+        })
+      }
+      return
+    }
+
+    if (cmd === 'rpc-load-channels') {
+      const authedSettings = await ensureAuthenticated(actionUUID, settings)
+      if (!authedSettings.guildId) {
+        sendToInspector(actionUUID, { type: 'channels', guildId: '', channels: [] })
+        return
+      }
+      const channels = await rpc.getChannels(authedSettings.guildId)
+      sendToInspector(actionUUID, {
+        type: 'channels',
+        guildId: authedSettings.guildId,
+        channels,
+      })
+      return
+    }
+  } catch (err) {
+    const message = err?.message || String(err)
+    sendToInspector(actionUUID, { type: 'error', message })
+  }
+}
+
+process.on('message', msg => {
+  if (!msg?.event) return
+
+  if (msg.event === 'sendToPlugin') {
+    handleInspectorMessage(msg.actionUUID || '', msg.settings || {})
+    return
   }
 
-  if (msg.event === 'keyUp') {
-    if (!hotkey) return
-    if (HOLD_ACTIONS.has(actionUUID)) {
-      console.log(`[${pluginUUID}] keyUp   ${actionUUID} → keyup "${hotkey}"`)
-      xdotoolKeyUp(hotkey)
-    }
+  if (msg.event === 'keyDown' || msg.event === 'keyUp') {
+    handleKeyEvent(msg)
   }
 })
 
-// Keep the process alive
+log('Discord RPC plugin ready')
 setInterval(() => {}, 60_000)

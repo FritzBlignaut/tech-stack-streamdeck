@@ -7,7 +7,7 @@
 [![Electron](https://img.shields.io/badge/Electron-42-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Node](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![License](https://img.shields.io/badge/licence-Proprietary-red)](#licence)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 ---
 
@@ -22,6 +22,7 @@ The **official Elgato Stream Deck software does not support Linux**. This projec
 ## Table of Contents
 
 - [Features](#features)
+- [Installing OBS Studio & Discord Plugins](#-installing-the-obs-studio--discord-plugins)
 - [What It Cannot Do (Yet)](#what-it-cannot-do-yet)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -86,7 +87,51 @@ OBS Studio and Discord support are distributed as separate `.sdPlugin` packages.
 | Plugin | Actions | Requires |
 |--------|---------|----------|
 | **OBS Studio** (`obs-plugin/`) | Toggle record, toggle stream, pause recording, replay buffer, switch scene, switch collection, source visibility, mute, media control, studio mode, filter toggle, screenshot, transition, chapter marker | OBS WebSocket |
-| **Discord** (`discord-plugin/`) | Push-to-Talk, Mute, Deafen | `xdotool` |
+| **Discord** (`discord-plugin/`) | Mute, Deafen, Push-to-Talk, Push-to-Mute, channel switching via Discord RPC | Discord desktop app + Discord developer app credentials |
+
+---
+
+> [!IMPORTANT]
+> ## 🔌 Installing the OBS Studio & Discord Plugins
+>
+> OBS Studio and Discord support ship as **separate plugin packages** — they are **not active by default**.
+> You must copy the plugin folder to the correct location before the app will discover them.
+>
+> ### Where they live in this repo
+>
+> ```
+> tech-stack-streamdeck/
+> ├── obs-plugin/
+> │   └── com.obs.streamdeck.sdPlugin/   ← copy this entire folder
+> └── discord-plugin/
+>     └── com.discord.streamdeck.sdPlugin/  ← copy this entire folder
+> ```
+>
+> ### How to install
+>
+> ```bash
+> # 1. Create the plugins directory (one-time setup)
+> mkdir -p ~/.config/tech-stack-streamdeck/plugins
+>
+> # 2a. Install OBS Studio plugin
+> cp -r obs-plugin/com.obs.streamdeck.sdPlugin \
+>   ~/.config/tech-stack-streamdeck/plugins/
+>
+> # 2b. Install Discord plugin
+> cp -r discord-plugin/com.discord.streamdeck.sdPlugin \
+>   ~/.config/tech-stack-streamdeck/plugins/
+> ```
+>
+> **Restart the app after installing.** Plugin actions appear in the action picker under their own category ("OBS Studio" / "Discord").
+>
+> ### Plugin prerequisites
+>
+> | Plugin | Extra setup required |
+> |--------|---------------------|
+> | **OBS Studio** | Open OBS → **Tools → WebSocket Server Settings** → enable the server (default port **4455**). The plugin auto-connects and retries every 5 s. |
+> | **Discord** | Open Discord desktop app. In the Property Inspector, provide your Discord Developer Application `client_id` and `client_secret`, authorize RPC access, then select channels where needed. |
+>
+> To uninstall a plugin, delete its folder from `~/.config/tech-stack-streamdeck/plugins/` and restart the app.
 
 ---
 
@@ -179,8 +224,60 @@ The Scene, Scene Collection, Source, Input, and Transition pickers in the Proper
 ### Discord plugin
 
 1. Install the plugin (see [Installing a plugin](#installing-a-plugin) above)
-2. Ensure `xdotool` is installed (`sudo apt install xdotool`)
-3. Open Discord and assign Push-to-Talk / Mute / Deafen to buttons
+2. Open Discord desktop app and keep it running
+3. Create a Discord developer application and copy its **Client ID**
+4. In Discord Developer Portal → **OAuth2**, add `http://127.0.0.1` to **Redirects**
+4. In the button's Property Inspector, enter the Discord **Client ID**
+5. Configure a relay URL (recommended) so `client_secret` and refresh tokens stay server-side
+6. Click **Authorize** once and approve the Discord prompt
+7. For voice/text channel actions, pick a guild and channel from the inspector dropdowns
+
+Cloudflare Workers free-tier relay (recommended):
+
+```bash
+# from repo root
+cd discord-relay
+npm i -g wrangler
+wrangler login
+wrangler kv namespace create DISCORD_SESSIONS
+wrangler kv namespace create DISCORD_SESSIONS --preview
+# paste generated KV IDs into discord-relay/wrangler.toml
+wrangler secret put DISCORD_CLIENT_SECRET
+wrangler secret put RELAY_API_KEY
+wrangler deploy
+```
+
+Then paste the deployed Worker URL into the `Relay URL` field in the Discord inspector. If you set `RELAY_API_KEY`, also paste it into `Relay API Key`.
+
+#### What clone-users must run for Discord
+
+- The app itself (`npm run electron:dev` in dev mode or installed packaged app)
+- Discord desktop app (must be open for Discord RPC)
+- No local relay process if you use deployed Cloudflare Worker
+
+#### No-host fallback options
+
+- **Local relay (zero hosting cost):** run one command from repo root and use local relay URL
+- **Direct token mode (least secure):** leave `Relay URL` empty and provide `Client Secret` in inspector
+
+Security note: direct token mode exposes secrets to local plugin settings, while relay mode keeps them server-side.
+
+Local relay one-command startup:
+
+```bash
+npm run discord-relay:local:setup
+```
+
+Then set `Relay URL` to `http://127.0.0.1:8787` in the Discord inspector.
+
+Manual (non-interactive) startup also works:
+
+```bash
+export DISCORD_CLIENT_SECRET="your-discord-client-secret"
+export DISCORD_RELAY_MASTER_KEY="long-random-local-passphrase"
+export RELAY_API_KEY="optional-local-relay-key"
+npm run discord-relay:local
+```
 
 ---
 
@@ -188,9 +285,7 @@ The Scene, Scene Collection, Source, Input, and Transition pickers in the Proper
 
 ### Installing from the pre-built package (recommended)
 
-Download the latest `.deb` from the [Releases page](https://github.com/FritzBlignaut/tech-stack-streamdeck/releases) and follow the step-by-step guide:
-
-📖 **[Installation Guide](docs/installation-guide.md)** — covers dependency setup, `.deb` install, udev rules, and first-launch verification.
+Download the latest `.deb` from the [Releases page](https://github.com/tech-stack-studios/tech-stack-streamdeck/releases).
 
 ### Building from source (developers)
 

@@ -94,8 +94,8 @@ let pluginManifests   = []         // [{ manifest, pluginDir }]
 function createTrayIconPng() {
   const { deflateSync } = require('zlib')
   const W = 22, H = 22
-  const BG = [30, 30, 30]    // #1e1e1e
-  const FG = [90, 156, 245]  // #5a9cf5
+  const BG = [0, 0, 0, 0]          // transparent
+  const FG = [255, 255, 255, 255]  // white, fully opaque
   const colStarts = [2, 6, 10, 14, 18]  // 5 cols, 3 px wide, 1 px gap
   const rowStarts = [4, 9, 14]          // 3 rows, 3 px tall, 2 px gap
 
@@ -129,7 +129,7 @@ function createTrayIconPng() {
 
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4)
-  ihdr[8] = 8; ihdr[9] = 2  // 8-bit, RGB
+  ihdr[8] = 8; ihdr[9] = 6  // 8-bit, RGBA
 
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
@@ -544,9 +544,12 @@ function registerIpcHandlers() {
       return { ok: false, error: 'Invalid manifest: missing UUID or Actions array' }
     }
     const destDir = path.join(getPluginsDir(), `${manifest.UUID}.sdPlugin`)
+    // Stop and remove any existing installation with the same UUID (handles reinstall)
+    stopPlugin(manifest.UUID)
+    pluginManifests = pluginManifests.filter(p => p.manifest.UUID !== manifest.UUID)
     try {
       await fs.promises.mkdir(getPluginsDir(), { recursive: true })
-      await fs.promises.cp(resolved, destDir, { recursive: true })
+      await fs.promises.cp(resolved, destDir, { recursive: true, force: true })
     } catch (err) {
       return { ok: false, error: err.message }
     }

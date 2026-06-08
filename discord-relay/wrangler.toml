@@ -1,0 +1,15 @@
+name = "discord-rpc-relay"
+main = "worker.mjs"
+compatibility_date = "2026-06-04"
+
+[[kv_namespaces]]
+binding = "DISCORD_SESSIONS"
+id = "REPLACE_WITH_PROD_KV_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_ID"
+
+[vars]
+SESSION_TTL_SECONDS = "2592000"
+
+# Set these with wrangler secret put:
+# DISCORD_CLIENT_SECRET
+# RELAY_API_KEY (optional but recommended)

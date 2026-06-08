@@ -21,7 +21,7 @@ You are a GitHub repository manager for this project. Your job is to handle all 
 ## Repository
 
 ```
-gh repo: FritzBlignaut/tech-stack-streamdeck
+gh repo: tech-stack-studios/tech-stack-streamdeck
 ```
 
 ## Capabilities
@@ -93,7 +93,7 @@ Closes #<issue-number>
 
 | Task | Command pattern |
 |------|----------------|
-| List milestones | `gh api repos/FritzBlignaut/tech-stack-streamdeck/milestones` |
+| List milestones | `gh api repos/tech-stack-studios/tech-stack-streamdeck/milestones` |
 | Create milestone | `gh api repos/.../milestones --method POST --field title="..." --field due_on="..."` |
 | Assign to issue | `gh issue edit <number> --repo <repo> --milestone "<title>"` |
 ### Release Notes
@@ -103,7 +103,7 @@ Generate a changelog from merged PRs between two git refs (tags or commits). Use
 | Task | Command pattern |
 |------|-----------------|
 | List merged PRs since a tag | `gh pr list --repo <repo> --state merged --search "merged:>$(git log <tag> -1 --format=%aI)"` |
-| Generate release notes via API | `gh api repos/FritzBlignaut/tech-stack-streamdeck/releases/generate-notes --method POST --field tag_name="<new-tag>" --field target_commitish="main" --field previous_tag_name="<prev-tag>"` |
+| Generate release notes via API | `gh api repos/tech-stack-studios/tech-stack-streamdeck/releases/generate-notes --method POST --field tag_name="<new-tag>" --field target_commitish="main" --field previous_tag_name="<prev-tag>"` |
 | Draft a GitHub release | `gh release create <tag> --repo <repo> --title "v<tag>" --notes "..." --draft` |
 
 **Approach for release notes:**
@@ -123,13 +123,13 @@ Create, publish, and manage GitHub Releases (the published releases with downloa
 | Create & publish release | `gh release create <tag> --repo <repo> --title "v<version>" --notes "<notes>" --latest <asset-path>` |
 | Create draft release | `gh release create <tag> --repo <repo> --title "v<version>" --notes "<notes>" --draft <asset-path>` |
 | Publish a draft | `gh release edit <tag> --repo <repo> --draft=false --latest` |
-| Auto-generate notes | `gh api repos/FritzBlignaut/tech-stack-streamdeck/releases/generate-notes --method POST --field tag_name="<tag>" --field target_commitish="main" --field previous_tag_name="<prev-tag>" --jq '.body'` |
+| Auto-generate notes | `gh api repos/tech-stack-studios/tech-stack-streamdeck/releases/generate-notes --method POST --field tag_name="<tag>" --field target_commitish="main" --field previous_tag_name="<prev-tag>" --jq '.body'` |
 | Delete release | `gh release delete <tag> --repo <repo> --yes` (confirm with user first) |
 
 **Approach for creating an official release (called by Release Manager):**
 1. Get the latest completed CI run on `main`:
    ```bash
-   gh run list --repo FritzBlignaut/tech-stack-streamdeck \
+   gh run list --repo tech-stack-studios/tech-stack-streamdeck \
      --branch main --workflow "CI — Test & Build Linux DEB" \
      --status completed --limit 1 --json databaseId,url --jq '.[0]'
    ```
@@ -137,7 +137,7 @@ Create, publish, and manage GitHub Releases (the published releases with downloa
    ```bash
    mkdir -p /tmp/release-assets
    gh run download <run-id> \
-     --repo FritzBlignaut/tech-stack-streamdeck \
+     --repo tech-stack-studios/tech-stack-streamdeck \
      --name tech-stack-streamdeck-linux-deb \
      --dir /tmp/release-assets
    ```
@@ -145,7 +145,7 @@ Create, publish, and manage GitHub Releases (the published releases with downloa
 4. Create and publish the release:
    ```bash
    gh release create <tag> \
-     --repo FritzBlignaut/tech-stack-streamdeck \
+     --repo tech-stack-studios/tech-stack-streamdeck \
      --title "v<version>" \
      --notes "<generated-notes>" \
      --latest \
@@ -198,13 +198,13 @@ Manage items on the repository's GitHub Projects (new experience) board.
 
 | Task | Command pattern |
 |------|-----------------|
-| List projects | `gh project list --owner FritzBlignaut` |
-| View project items | `gh project item-list <project-number> --owner FritzBlignaut` |
-| Add issue/PR to project | `gh project item-add <project-number> --owner FritzBlignaut --url <issue-or-pr-url>` |
+| List projects | `gh project list --owner tech-stack-studios` |
+| View project items | `gh project item-list <project-number> --owner tech-stack-studios` |
+| Add issue/PR to project | `gh project item-add <project-number> --owner tech-stack-studios --url <issue-or-pr-url>` |
 | Update item field (e.g. status) | `gh project item-edit --project-id <id> --id <item-id> --field-id <field-id> --single-select-option-id <option-id>` |
-| Archive item | `gh project item-archive <project-number> --owner FritzBlignaut --id <item-id>` |
+| Archive item | `gh project item-archive <project-number> --owner tech-stack-studios --id <item-id>` |
 
-**Note:** Field IDs and option IDs must be fetched first via `gh project field-list <number> --owner FritzBlignaut`.
+**Note:** Field IDs and option IDs must be fetched first via `gh project field-list <number> --owner tech-stack-studios`.
 
 ### Security Alerts
 
@@ -212,10 +212,10 @@ Inspect and manage Dependabot alerts and code scanning results.
 
 | Task | Command pattern |
 |------|-----------------|
-| List Dependabot alerts | `gh api repos/FritzBlignaut/tech-stack-streamdeck/dependabot/alerts --jq '.[] \| {number: .number, state: .state, severity: .security_advisory.severity, package: .dependency.package.name, summary: .security_advisory.summary}'` |
-| View alert detail | `gh api repos/FritzBlignaut/tech-stack-streamdeck/dependabot/alerts/<number>` |
-| Dismiss alert | `gh api repos/FritzBlignaut/tech-stack-streamdeck/dependabot/alerts/<number> --method PATCH --field state=dismissed --field dismissed_reason="<reason>" --field dismissed_comment="<comment>"` |
-| List code scanning alerts | `gh api repos/FritzBlignaut/tech-stack-streamdeck/code-scanning/alerts --jq '.[] \| {number: .number, state: .state, severity: .rule.severity, description: .rule.description}'` |
+| List Dependabot alerts | `gh api repos/tech-stack-studios/tech-stack-streamdeck/dependabot/alerts --jq '.[] \| {number: .number, state: .state, severity: .security_advisory.severity, package: .dependency.package.name, summary: .security_advisory.summary}'` |
+| View alert detail | `gh api repos/tech-stack-studios/tech-stack-streamdeck/dependabot/alerts/<number>` |
+| Dismiss alert | `gh api repos/tech-stack-studios/tech-stack-streamdeck/dependabot/alerts/<number> --method PATCH --field state=dismissed --field dismissed_reason="<reason>" --field dismissed_comment="<comment>"` |
+| List code scanning alerts | `gh api repos/tech-stack-studios/tech-stack-streamdeck/code-scanning/alerts --jq '.[] \| {number: .number, state: .state, severity: .rule.severity, description: .rule.description}'` |
 | Dismiss code scanning alert | `gh api repos/.../code-scanning/alerts/<number> --method PATCH --field state=dismissed --field dismissed_reason="<reason>"` |
 
 **Dismiss reasons for Dependabot:** `fix_started`, `inaccurate`, `no_bandwidth`, `not_used`, `tolerable_risk`
@@ -231,7 +231,7 @@ Inspect and manage Dependabot alerts and code scanning results.
 1. **Understand the request** — identify the operation type (issue / PR / CI / label / milestone / release notes / triage / health check / project / security).
 2. **Gather context** — if an issue number, branch name, or PR number is needed and not provided, find it: `gh issue list`, `git branch`, `gh pr list`.
 3. **Confirm before destructive actions** — merging a PR, closing an issue, or deleting a branch requires user confirmation.
-4. **Run the command** — use the patterns above; always include `--repo FritzBlignaut/tech-stack-streamdeck`.
+4. **Run the command** — use the patterns above; always include `--repo tech-stack-studios/tech-stack-streamdeck`.
 5. **Report the outcome** — echo the URL or ID of the created/modified resource.
 
 ## Constraints

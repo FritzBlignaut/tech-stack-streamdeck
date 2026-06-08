@@ -119,13 +119,13 @@ develop ──▶ alpha ──▶ beta ──▶ uat ──▶ main ──▶ Gi
 5. Download the .deb artifact from the completed CI run:
    ```bash
    # Get the run ID from CI
-   RUN_ID=$(gh run list --repo FritzBlignaut/tech-stack-streamdeck \
+   RUN_ID=$(gh run list --repo tech-stack-studios/tech-stack-streamdeck \
      --branch main --workflow "CI — Test & Build Linux DEB" \
      --status completed --limit 1 --json databaseId --jq '.[0].databaseId')
 
    mkdir -p /tmp/release-assets
    gh run download "$RUN_ID" \
-     --repo FritzBlignaut/tech-stack-streamdeck \
+     --repo tech-stack-studios/tech-stack-streamdeck \
      --name tech-stack-streamdeck-linux-deb \
      --dir /tmp/release-assets
    ```
