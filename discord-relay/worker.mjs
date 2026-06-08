@@ -52,6 +52,7 @@ async function handleExchange(request, env) {
   const clientId = String(body?.clientId || '').trim()
   const code = String(body?.code || '').trim()
   const existingSessionId = String(body?.sessionId || '').trim()
+  const redirectUri = String(body?.redirectUri || env.DISCORD_REDIRECT_URI || 'http://127.0.0.1').trim()
 
   if (!clientId) return json({ error: 'Missing clientId' }, 400)
   if (!code) return json({ error: 'Missing authorization code' }, 400)
@@ -61,6 +62,7 @@ async function handleExchange(request, env) {
     clientSecret: requiredSecret(env),
     grantType: 'authorization_code',
     code,
+    redirectUri,
   })
 
   const sessionId = existingSessionId || crypto.randomUUID()
@@ -125,7 +127,7 @@ async function handleRevoke(request, env) {
   return json({ revoked: true, sessionId })
 }
 
-async function exchangeWithDiscord({ clientId, clientSecret, grantType, code, refreshToken }) {
+async function exchangeWithDiscord({ clientId, clientSecret, grantType, code, refreshToken, redirectUri }) {
   const params = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,
@@ -133,6 +135,7 @@ async function exchangeWithDiscord({ clientId, clientSecret, grantType, code, re
   })
 
   if (code) params.set('code', code)
+  if (grantType === 'authorization_code' && redirectUri) params.set('redirect_uri', redirectUri)
   if (refreshToken) params.set('refresh_token', refreshToken)
 
   const res = await fetch('https://discord.com/api/oauth2/token', {

@@ -224,17 +224,20 @@ The Scene, Scene Collection, Source, Input, and Transition pickers in the Proper
 ### Discord plugin
 
 1. Install the plugin (see [Installing a plugin](#installing-a-plugin) above)
-2. Open Discord desktop app
-3. In the button's Property Inspector, enter Discord application `client_id`
-4. Configure `relay_url` (recommended) so your `client_secret` and refresh token stay server-side
-5. Click **Authorize** and approve the Discord prompt
-6. For voice/text channel actions, pick a guild and channel from the inspector dropdowns
+2. Open Discord desktop app and keep it running
+3. Create a Discord developer application and copy its **Client ID**
+4. In Discord Developer Portal → **OAuth2**, add `http://127.0.0.1` to **Redirects**
+4. In the button's Property Inspector, enter the Discord **Client ID**
+5. Configure a relay URL (recommended) so `client_secret` and refresh tokens stay server-side
+6. Click **Authorize** once and approve the Discord prompt
+7. For voice/text channel actions, pick a guild and channel from the inspector dropdowns
 
-Hosted relay quick start (free, Cloudflare Workers):
+Cloudflare Workers free-tier relay (recommended):
 
 ```bash
 # from repo root
 cd discord-relay
+npm i -g wrangler
 wrangler login
 wrangler kv namespace create DISCORD_SESSIONS
 wrangler kv namespace create DISCORD_SESSIONS --preview
@@ -245,6 +248,36 @@ wrangler deploy
 ```
 
 Then paste the deployed Worker URL into the `Relay URL` field in the Discord inspector. If you set `RELAY_API_KEY`, also paste it into `Relay API Key`.
+
+#### What clone-users must run for Discord
+
+- The app itself (`npm run electron:dev` in dev mode or installed packaged app)
+- Discord desktop app (must be open for Discord RPC)
+- No local relay process if you use deployed Cloudflare Worker
+
+#### No-host fallback options
+
+- **Local relay (zero hosting cost):** run one command from repo root and use local relay URL
+- **Direct token mode (least secure):** leave `Relay URL` empty and provide `Client Secret` in inspector
+
+Security note: direct token mode exposes secrets to local plugin settings, while relay mode keeps them server-side.
+
+Local relay one-command startup:
+
+```bash
+npm run discord-relay:local:setup
+```
+
+Then set `Relay URL` to `http://127.0.0.1:8787` in the Discord inspector.
+
+Manual (non-interactive) startup also works:
+
+```bash
+export DISCORD_CLIENT_SECRET="your-discord-client-secret"
+export DISCORD_RELAY_MASTER_KEY="long-random-local-passphrase"
+export RELAY_API_KEY="optional-local-relay-key"
+npm run discord-relay:local
+```
 
 ---
 

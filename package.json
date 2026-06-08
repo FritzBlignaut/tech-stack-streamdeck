@@ -20,7 +20,9 @@
     "electron:build": "vite build && electron-builder --linux",
     "package:local": "npm run build && npx electron-builder --linux dir --publish=never",
     "test:local": "npm run package:local && ./dist-electron/linux-unpacked/tech-stack-streamdeck",
-    "test:stress": "npm run package:local && SLEEP_STRESS=1 ./dist-electron/linux-unpacked/tech-stack-streamdeck"
+    "test:stress": "npm run package:local && SLEEP_STRESS=1 ./dist-electron/linux-unpacked/tech-stack-streamdeck",
+    "discord-relay:local": "node discord-relay/local-server.mjs",
+    "discord-relay:local:setup": "bash discord-relay/start-local.sh"
   },
   "build": {
     "appId": "com.techstack.streamdeck",
