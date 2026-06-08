@@ -140,8 +140,14 @@
     <label for="clientId">Client ID</label>
     <input type="text" id="clientId" placeholder="Discord application client ID" autocomplete="off" />
 
-    <label for="clientSecret">Client Secret</label>
-    <input type="password" id="clientSecret" placeholder="Discord application client secret" autocomplete="off" />
+    <label for="relayUrl">Relay URL (recommended)</label>
+    <input type="text" id="relayUrl" placeholder="https://your-relay.workers.dev" autocomplete="off" />
+
+    <label for="relayApiKey">Relay API Key (optional)</label>
+    <input type="password" id="relayApiKey" placeholder="x-relay-key if enabled on your relay" autocomplete="off" />
+
+    <label for="clientSecret">Client Secret (legacy fallback)</label>
+    <input type="password" id="clientSecret" placeholder="Only needed when no relay URL is configured" autocomplete="off" />
 
     <label for="scopes">Scopes</label>
     <input type="text" id="scopes" value="rpc identify" autocomplete="off" />
@@ -153,7 +159,7 @@
     </div>
 
     <div class="hint">
-      Authorize opens Discord's permission prompt. This action stores tokens in your local profile so the plugin can call RPC commands.
+      Authorize opens Discord's permission prompt. With a relay URL configured, your Discord client secret and refresh token stay on the relay and are not persisted locally.
     </div>
 
     <div class="status" id="status"></div>
@@ -219,6 +225,8 @@
       instruction: document.getElementById('instruction'),
       status: document.getElementById('status'),
       clientId: document.getElementById('clientId'),
+      relayUrl: document.getElementById('relayUrl'),
+      relayApiKey: document.getElementById('relayApiKey'),
       clientSecret: document.getElementById('clientSecret'),
       scopes: document.getElementById('scopes'),
       saveBtn: document.getElementById('saveBtn'),
@@ -261,6 +269,8 @@
 
     function syncFormFromSettings() {
       el.clientId.value = settings.clientId || ''
+      el.relayUrl.value = settings.relayUrl || ''
+      el.relayApiKey.value = settings.relayApiKey || ''
       el.clientSecret.value = settings.clientSecret || ''
       el.scopes.value = settings.scopes || 'rpc identify'
     }
@@ -332,18 +342,24 @@
     }
 
     el.saveBtn.addEventListener('click', () => {
+      const relayUrl = el.relayUrl.value.trim()
       persist({
         clientId: el.clientId.value.trim(),
-        clientSecret: el.clientSecret.value.trim(),
+        relayUrl,
+        relayApiKey: el.relayApiKey.value.trim(),
+        clientSecret: relayUrl ? '' : el.clientSecret.value.trim(),
         scopes: el.scopes.value.trim() || 'rpc identify',
       })
       setStatus('Saved settings', 'success')
     })
 
     el.authorizeBtn.addEventListener('click', () => {
+      const relayUrl = el.relayUrl.value.trim()
       persist({
         clientId: el.clientId.value.trim(),
-        clientSecret: el.clientSecret.value.trim(),
+        relayUrl,
+        relayApiKey: el.relayApiKey.value.trim(),
+        clientSecret: relayUrl ? '' : el.clientSecret.value.trim(),
         scopes: el.scopes.value.trim() || 'rpc identify',
       })
       setStatus('Authorizing via Discord...', null)
@@ -351,9 +367,12 @@
     })
 
     el.refreshBtn.addEventListener('click', () => {
+      const relayUrl = el.relayUrl.value.trim()
       persist({
         clientId: el.clientId.value.trim(),
-        clientSecret: el.clientSecret.value.trim(),
+        relayUrl,
+        relayApiKey: el.relayApiKey.value.trim(),
+        clientSecret: relayUrl ? '' : el.clientSecret.value.trim(),
         scopes: el.scopes.value.trim() || 'rpc identify',
       })
       setStatus('Refreshing Discord data...', null)

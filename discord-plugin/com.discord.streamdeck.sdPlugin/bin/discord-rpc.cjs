@@ -13,6 +13,45 @@ const OPCODE_PING = 3
 const OPCODE_PONG = 4
 
 const REQUEST_TIMEOUT_MS = 12_000
+const RELAY_TIMEOUT_MS = 12_000
+
+async function postJson(url, payload, headers = {}) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(payload || {}),
+      signal: controller.signal,
+    })
+
+    let data = null
+    try { data = await res.json() } catch {}
+
+    if (!res.ok) {
+      const reason = data?.error || data?.message || `HTTP ${res.status}`
+      throw new Error(reason)
+    }
+
+    return data || {}
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error('Relay request timed out')
+    throw err
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function normalizeRelayUrl(relayUrl) {
+  const base = String(relayUrl || '').trim().replace(/\/+$/, '')
+  if (!base) return ''
+  if (!/^https?:\/\//i.test(base)) {
+    throw new Error('Relay URL must start with http:// or https://')
+  }
+  return base
+}
 
 function makeNonce() {
   return crypto.randomBytes(8).toString('hex')
@@ -314,7 +353,31 @@ class DiscordRpcClient {
   }
 }
 
-async function exchangeAuthCode({ clientId, clientSecret, code }) {
+async function exchangeAuthCode({ clientId, clientSecret, code, relayUrl, relayApiKey, relaySessionId }) {
+  const relayBaseUrl = normalizeRelayUrl(relayUrl)
+  const relayKey = String(relayApiKey || '').trim()
+  const relaySession = String(relaySessionId || '').trim()
+
+  if (relayBaseUrl) {
+    if (!clientId) throw new Error('Missing client ID for relay exchange')
+    if (!code) throw new Error('Missing authorization code from Discord')
+
+    const relayPayload = await postJson(
+      `${relayBaseUrl}/oauth/discord/exchange`,
+      { clientId, code, sessionId: relaySession || null },
+      relayKey ? { 'x-relay-key': relayKey } : {}
+    )
+
+    return {
+      accessToken: relayPayload.accessToken || '',
+      refreshToken: relayPayload.refreshToken || null,
+      sessionId: relayPayload.sessionId || relaySession || null,
+      expiresAt: Number(relayPayload.expiresAt || 0),
+      scope: relayPayload.scope || null,
+      tokenType: relayPayload.tokenType || null,
+    }
+  }
+
   if (!clientId) throw new Error('Missing client ID for token exchange')
   if (!clientSecret) throw new Error('Missing client secret for token exchange')
   if (!code) throw new Error('Missing authorization code from Discord')
@@ -349,7 +412,31 @@ async function exchangeAuthCode({ clientId, clientSecret, code }) {
   }
 }
 
-async function refreshAccessToken({ clientId, clientSecret, refreshToken }) {
+async function refreshAccessToken({ clientId, clientSecret, refreshToken, relayUrl, relayApiKey, relaySessionId }) {
+  const relayBaseUrl = normalizeRelayUrl(relayUrl)
+  const relayKey = String(relayApiKey || '').trim()
+  const relaySession = String(relaySessionId || '').trim()
+
+  if (relayBaseUrl) {
+    if (!clientId) throw new Error('Missing client ID for relay refresh')
+    if (!relaySession && !refreshToken) throw new Error('Missing relay session or refresh token')
+
+    const relayPayload = await postJson(
+      `${relayBaseUrl}/oauth/discord/access`,
+      { clientId, sessionId: relaySession || null, refreshToken: refreshToken || null },
+      relayKey ? { 'x-relay-key': relayKey } : {}
+    )
+
+    return {
+      accessToken: relayPayload.accessToken || '',
+      refreshToken: relayPayload.refreshToken || refreshToken || null,
+      sessionId: relayPayload.sessionId || relaySession || null,
+      expiresAt: Number(relayPayload.expiresAt || 0),
+      scope: relayPayload.scope || null,
+      tokenType: relayPayload.tokenType || null,
+    }
+  }
+
   if (!clientId) throw new Error('Missing client ID for refresh')
   if (!clientSecret) throw new Error('Missing client secret for refresh')
   if (!refreshToken) throw new Error('Missing refresh token')

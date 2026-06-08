@@ -225,9 +225,26 @@ The Scene, Scene Collection, Source, Input, and Transition pickers in the Proper
 
 1. Install the plugin (see [Installing a plugin](#installing-a-plugin) above)
 2. Open Discord desktop app
-3. In the button's Property Inspector, enter Discord application `client_id` and `client_secret`
-4. Click **Authorize** and approve the Discord prompt
-5. For voice/text channel actions, pick a guild and channel from the inspector dropdowns
+3. In the button's Property Inspector, enter Discord application `client_id`
+4. Configure `relay_url` (recommended) so your `client_secret` and refresh token stay server-side
+5. Click **Authorize** and approve the Discord prompt
+6. For voice/text channel actions, pick a guild and channel from the inspector dropdowns
+
+Hosted relay quick start (free, Cloudflare Workers):
+
+```bash
+# from repo root
+cd discord-relay
+wrangler login
+wrangler kv namespace create DISCORD_SESSIONS
+wrangler kv namespace create DISCORD_SESSIONS --preview
+# paste generated KV IDs into discord-relay/wrangler.toml
+wrangler secret put DISCORD_CLIENT_SECRET
+wrangler secret put RELAY_API_KEY
+wrangler deploy
+```
+
+Then paste the deployed Worker URL into the `Relay URL` field in the Discord inspector. If you set `RELAY_API_KEY`, also paste it into `Relay API Key`.
 
 ---
 

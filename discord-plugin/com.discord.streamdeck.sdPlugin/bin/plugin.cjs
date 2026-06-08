@@ -31,6 +31,9 @@ function sanitizeSettings(settings = {}) {
   return {
     clientId: String(settings.clientId || '').trim(),
     clientSecret: String(settings.clientSecret || '').trim(),
+    relayUrl: String(settings.relayUrl || '').trim(),
+    relayApiKey: String(settings.relayApiKey || '').trim(),
+    relaySessionId: String(settings.relaySessionId || '').trim(),
     accessToken: String(settings.accessToken || '').trim(),
     refreshToken: String(settings.refreshToken || '').trim(),
     expiresAt: Number(settings.expiresAt || 0),
@@ -60,6 +63,33 @@ async function ensureAuthenticated(actionUUID, settings) {
       clientId: s.clientId,
       clientSecret: s.clientSecret,
       refreshToken: s.refreshToken,
+      relayUrl: s.relayUrl,
+      relayApiKey: s.relayApiKey,
+      relaySessionId: s.relaySessionId,
+    })
+
+    await rpc.authenticate(refreshed.accessToken)
+
+    const patch = {
+      accessToken: refreshed.accessToken,
+      expiresAt: refreshed.expiresAt,
+      scope: refreshed.scope,
+      tokenType: refreshed.tokenType,
+    }
+    if (refreshed.refreshToken) patch.refreshToken = refreshed.refreshToken
+    if (refreshed.sessionId) patch.relaySessionId = refreshed.sessionId
+    if (s.relayUrl) { patch.clientSecret = ''; patch.refreshToken = '' }
+
+    sendToInspector(actionUUID, { type: 'patchSettings', patch })
+    return { ...s, ...refreshed }
+  }
+
+  if (s.relayUrl && s.relaySessionId) {
+    const refreshed = await refreshAccessToken({
+      clientId: s.clientId,
+      relayUrl: s.relayUrl,
+      relayApiKey: s.relayApiKey,
+      relaySessionId: s.relaySessionId,
     })
 
     await rpc.authenticate(refreshed.accessToken)
@@ -68,10 +98,12 @@ async function ensureAuthenticated(actionUUID, settings) {
       type: 'patchSettings',
       patch: {
         accessToken: refreshed.accessToken,
-        refreshToken: refreshed.refreshToken,
         expiresAt: refreshed.expiresAt,
         scope: refreshed.scope,
         tokenType: refreshed.tokenType,
+        relaySessionId: refreshed.sessionId || s.relaySessionId,
+        clientSecret: '',
+        refreshToken: '',
       },
     })
 
@@ -222,19 +254,23 @@ async function handleInspectorMessage(actionUUID, payload) {
         clientId: s.clientId,
         clientSecret: s.clientSecret,
         code: auth.code,
+        relayUrl: s.relayUrl,
+        relayApiKey: s.relayApiKey,
+        relaySessionId: s.relaySessionId,
       })
       await rpc.authenticate(token.accessToken)
 
-      sendToInspector(actionUUID, {
-        type: 'patchSettings',
-        patch: {
-          accessToken: token.accessToken,
-          refreshToken: token.refreshToken,
-          expiresAt: token.expiresAt,
-          scope: token.scope,
-          tokenType: token.tokenType,
-        },
-      })
+      const patch = {
+        accessToken: token.accessToken,
+        expiresAt: token.expiresAt,
+        scope: token.scope,
+        tokenType: token.tokenType,
+      }
+      if (token.refreshToken) patch.refreshToken = token.refreshToken
+      if (token.sessionId) patch.relaySessionId = token.sessionId
+      if (s.relayUrl) { patch.clientSecret = ''; patch.refreshToken = '' }
+
+      sendToInspector(actionUUID, { type: 'patchSettings', patch })
 
       sendToInspector(actionUUID, {
         type: 'status',
