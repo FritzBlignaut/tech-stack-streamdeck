@@ -13,6 +13,7 @@ const ACTION_PTT = 'com.discord.streamdeck.ptt'
 const ACTION_PTM = 'com.discord.streamdeck.ptm'
 
 const HOLD_ACTIONS = new Set([ACTION_PTT, ACTION_PTM])
+const DEFAULT_DISCORD_REDIRECT_URI = 'http://127.0.0.1'
 
 const rpc = new DiscordRpcClient({ logger: console })
 
@@ -34,6 +35,7 @@ function sanitizeSettings(settings = {}) {
     relayUrl: String(settings.relayUrl || '').trim(),
     relayApiKey: String(settings.relayApiKey || '').trim(),
     relaySessionId: String(settings.relaySessionId || '').trim(),
+    redirectUri: String(settings.redirectUri || DEFAULT_DISCORD_REDIRECT_URI).trim(),
     accessToken: String(settings.accessToken || '').trim(),
     refreshToken: String(settings.refreshToken || '').trim(),
     expiresAt: Number(settings.expiresAt || 0),
@@ -257,6 +259,7 @@ async function handleInspectorMessage(actionUUID, payload) {
         relayUrl: s.relayUrl,
         relayApiKey: s.relayApiKey,
         relaySessionId: s.relaySessionId,
+        redirectUri: s.redirectUri,
       })
       await rpc.authenticate(token.accessToken)
 

@@ -14,6 +14,7 @@ const OPCODE_PONG = 4
 
 const REQUEST_TIMEOUT_MS = 12_000
 const RELAY_TIMEOUT_MS = 12_000
+const DEFAULT_DISCORD_REDIRECT_URI = 'http://127.0.0.1'
 
 async function postJson(url, payload, headers = {}) {
   const controller = new AbortController()
@@ -353,10 +354,11 @@ class DiscordRpcClient {
   }
 }
 
-async function exchangeAuthCode({ clientId, clientSecret, code, relayUrl, relayApiKey, relaySessionId }) {
+async function exchangeAuthCode({ clientId, clientSecret, code, relayUrl, relayApiKey, relaySessionId, redirectUri }) {
   const relayBaseUrl = normalizeRelayUrl(relayUrl)
   const relayKey = String(relayApiKey || '').trim()
   const relaySession = String(relaySessionId || '').trim()
+  const redirect = String(redirectUri || DEFAULT_DISCORD_REDIRECT_URI).trim()
 
   if (relayBaseUrl) {
     if (!clientId) throw new Error('Missing client ID for relay exchange')
@@ -364,7 +366,7 @@ async function exchangeAuthCode({ clientId, clientSecret, code, relayUrl, relayA
 
     const relayPayload = await postJson(
       `${relayBaseUrl}/oauth/discord/exchange`,
-      { clientId, code, sessionId: relaySession || null },
+      { clientId, code, sessionId: relaySession || null, redirectUri: redirect },
       relayKey ? { 'x-relay-key': relayKey } : {}
     )
 
@@ -387,6 +389,7 @@ async function exchangeAuthCode({ clientId, clientSecret, code, relayUrl, relayA
     client_secret: clientSecret,
     grant_type: 'authorization_code',
     code,
+    redirect_uri: redirect,
   })
 
   const res = await fetch('https://discord.com/api/oauth2/token', {
