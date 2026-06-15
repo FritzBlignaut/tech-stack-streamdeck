@@ -69,7 +69,7 @@
     "gifuct-js": "^2.1.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.1"
   },
   "devDependencies": {
     "electron": "^42.3.3",
